@@ -30,8 +30,8 @@ void initDisplay(int rotation) {
   tft.setRotation(rotation);
 
   // Clear the screen before writing to it
-  tft.fillScreen(TFT_WHITE);
-  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   
   // Set X and Y coordinates for center of display
   int centerY = tft.height() / 2;
@@ -81,8 +81,8 @@ void printTouchToSerial() {
 // Print Touchscreen info about X, Y and Pressure (Z) on the TFT Display
 void printTouchToDisplay() {
   // Clear TFT screen
-  // tft.fillScreen(TFT_WHITE);
-  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+  // tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
   int centerX = SCREEN_HEIGHT / 2;
   int textY = 80;
@@ -100,6 +100,6 @@ void printTouchToDisplay() {
 }
 
 void printStringToDisplay(String str) {
-  tft.setCursor(5, 5);
+  tft.setCursor(0, 5);
   tft.println(str);
 }

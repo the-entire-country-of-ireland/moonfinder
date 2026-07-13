@@ -60,8 +60,8 @@ void printSensorsToSerial() {
 }
 
 void printSensorsToDisplay() {
-  String strAccel = "Accel: " + accelReading.toString(2);
-  String strMag = "Mag: " + magReading.toString(2);
+  String strAccel = " Accel: " + accelReading.toString(2);
+  String strMag = " Mag: " + magReading.toString(2);
   String strSpaces = "      \n"; // Add spaces to clear previous text
   String strCombined = strAccel + strSpaces + strMag + strSpaces;
   printStringToDisplay(strCombined);

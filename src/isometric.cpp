@@ -71,7 +71,7 @@ void drawAxes(float rx, float ry, float rz, float scale, int cx, int cy) {
 
 void drawScene(float rx, float ry, float rz) {
 
-  tft.fillRect(0, 50, tft.width(), tft.height(), TFT_WHITE);
+  tft.fillRect(0, 50, tft.width(), tft.height(), TFT_BLACK);
 
   const int cx = tft.width() / 2;
   const int cy = tft.height() / 2 - 10;

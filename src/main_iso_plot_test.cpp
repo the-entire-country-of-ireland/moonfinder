@@ -13,7 +13,7 @@
 
 //     initDisplay(2);
 //     delay(50);
-//     tft.fillScreen(TFT_WHITE);
+//     tft.fillScreen(TFT_BLACK);
 
 //     tft.drawCentreString("Drag to rotate", tft.width() / 2, 20, 4);
 // }

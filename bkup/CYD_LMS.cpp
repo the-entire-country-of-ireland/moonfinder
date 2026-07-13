@@ -62,8 +62,8 @@
 // // Print Touchscreen info about X, Y and Pressure (Z) on the TFT Display
 // void printTouchToDisplay() {
 //   // Clear TFT screen
-//   // tft.fillScreen(TFT_WHITE);
-//   tft.setTextColor(TFT_BLACK, TFT_WHITE);
+//   // tft.fillScreen(TFT_BLACK);
+//   tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
 //   int centerX = SCREEN_HEIGHT / 2;
 //   int textY = 80;
@@ -117,8 +117,8 @@
 //   tft.setRotation(1);
 
 //   // Clear the screen before writing to it
-//   tft.fillScreen(TFT_WHITE);
-//   tft.setTextColor(TFT_BLACK, TFT_WHITE);
+//   tft.fillScreen(TFT_BLACK);
+//   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   
 //   // Set X and Y coordinates for center of display
 //   int centerY = tft.width() / 2;
@@ -190,5 +190,5 @@
 //   printTouchToDisplay();
   
 //   delay(50);
-//   // tft.fillScreen(TFT_WHITE);
+//   // tft.fillScreen(TFT_BLACK);
 // }

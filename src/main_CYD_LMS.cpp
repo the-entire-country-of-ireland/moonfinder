@@ -10,7 +10,7 @@
 //    initDisplay(2);
 
 //    delay(500);
-//    tft.fillScreen(TFT_WHITE);
+//    tft.fillScreen(TFT_BLACK);
 
 // }
 
