@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include "RTClib.h"
 
+
 class RTC {
 private:
   RTC_PCF8523 _rtc;
@@ -14,10 +15,10 @@ public:
   RTC();
   
   // Initialize RTC (call in setup)
-  bool init(uint8_t sda_pin = 21, uint8_t scl_pin = 22);
+  bool init(uint8_t sda_pin, uint8_t scl_pin);
   
-  // Set RTC to compilation date/time
-  bool setToCompileTime();
+  // Set RTC to compilation date/time (with optional offset in seconds)
+  bool setToCompileTime(int32_t offset_seconds = 0);
   
   // Get current date/time as DateTime object
   DateTime now();

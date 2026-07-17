@@ -69,7 +69,6 @@ void printSensorsToDisplay_original() {
 
 void printSensorsToDisplay() {
     tft.setTextWrap(false);
-    tft.setCursor(5, 15);
 
     tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
     tft.print("Acc: ");
@@ -77,7 +76,7 @@ void printSensorsToDisplay() {
     tft.printf("% 2.2f : % 2.2f : % 2.2f        ", 
         accelReading.x, accelReading.y, accelReading.z);
 
-    tft.setCursor(5, 35);
+    tft.setCursor(5, 40);
     tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
     tft.print("Mag: ");
     tft.setFont(&fonts::Font7); tft.setTextSize(0.35);

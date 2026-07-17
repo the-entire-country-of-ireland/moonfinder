@@ -1,25 +1,29 @@
 #include <Arduino.h>
 #include "rtc.h"
 
+#define SDA 22
+#define SCL 27
+
 RTC rtc;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  // Initialize RTC (default I2C pins: SDA=21, SCL=22)
-  if (!rtc.init()) {
+  // Initialize RTC
+  if (!rtc.init(SDA, SCL)) {
     Serial.println("Failed to initialize RTC!");
     return;
   }
   
-  // Set RTC to compilation time (uncomment if needed)
-  // rtc.setToCompileTime();
+  // Set RTC to compilation time
+  // rtc.setToCompileTime(30);
   
   Serial.println("RTC initialized successfully!\n");
 }
 
 void loop() {
+  Serial.println("");
   // Method 1: Get formatted string
   Serial.println(rtc.getDateTimeString());
   

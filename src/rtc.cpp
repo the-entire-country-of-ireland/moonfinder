@@ -1,9 +1,12 @@
 #include "rtc.h"
 
+#define SDA 22
+#define SCL 27
+
 RTC::RTC() : _initialized(false) {
 }
 
-bool RTC::init(uint8_t sda_pin, uint8_t scl_pin) {
+bool RTC::init(uint8_t sda_pin=SDA, uint8_t scl_pin=SCL) {
   Serial.println("\n=== RTC Initialization ===");
   
   // Initialize I2C
@@ -34,14 +37,18 @@ bool RTC::init(uint8_t sda_pin, uint8_t scl_pin) {
   return true;
 }
 
-bool RTC::setToCompileTime() {
+bool RTC::setToCompileTime(int32_t offset_seconds) {
   if (!_initialized) {
     Serial.println("ERROR: RTC not initialized!");
     return false;
   }
   
   Serial.println("Setting RTC to compile time...");
-  _rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  
+  DateTime compileTime = DateTime(F(__DATE__), F(__TIME__));
+  DateTime adjustedTime = DateTime(compileTime.unixtime() + offset_seconds);
+  
+  _rtc.adjust(adjustedTime);
   
   Serial.print("RTC set to: ");
   Serial.println(getDateTimeString());
@@ -52,7 +59,7 @@ bool RTC::setToCompileTime() {
 DateTime RTC::now() {
   if (!_initialized) {
     Serial.println("ERROR: RTC not initialized!");
-    return DateTime(0);  // Return epoch time
+    return DateTime((uint32_t) 0);  // Return epoch time
   }
   
   return _rtc.now();
