@@ -2,15 +2,12 @@
 
 #include "display.h"
 
-TFT_eSPI tft = TFT_eSPI();
-SPIClass touchscreenSPI = SPIClass(VSPI);
-XPT2046_Touchscreen touchscreen(XPT2046_CS, XPT2046_IRQ);
-
+LGFX tft;
+LGFX_Sprite sprite(&tft);
 
 bool touchActive = false;
-int touchX = 0;
-int touchY = 0;
-int touchZ = 0;
+int16_t touchX = 0;
+int16_t touchY = 0;
 
 #define FONT_SIZE 4
 
@@ -18,43 +15,41 @@ int touchZ = 0;
 void initDisplay(int rotation) {
   Serial.begin(115200);
 
-  // Start the SPI for the touchscreen and init the touchscreen
-  touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
-  touchscreen.begin(touchscreenSPI);
-  // Set the Touchscreen rotation in landscape mode
-  touchscreen.setRotation(rotation);
-
-  // Start the tft display
   tft.init();
-  // Set the TFT display rotation in landscape mode
-  tft.setRotation(rotation);
+  tft.initDMA();
+  tft.setRotation(2);
+  tft.setBrightness(128);  // 0 ~ 255
+
+  // Set the color mode as needed (default is 16).
+  // 16 requires less SPI communication and operates faster, but the red and blue gradations are 5 bits.
+  // 24 requires more SPI communication, but produces clearer tonal expression.
+  tft.setColorDepth(16);  // Set to 16-bit RGB565
+//tft.setColorDepth(24);  // Set to 24-bit RGB888 (the number of colors displayed will be 18-bit RGB666 depending on the panel)
+
+  if (!tft.touch()) {
+    Serial.println("Touch device not found.");
+  }
+
+  tft.clear(0xFFFFFFu);         // Fill the background with white
+  tft.setBaseColor(0x000000u);  // Specify black as the background color
+  tft.clear();                  // Fill with background color
 
   // Clear the screen before writing to it
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   
-  // Set X and Y coordinates for center of display
-  int centerY = tft.height() / 2;
-  int centerX = tft.width() / 2;
-
-  tft.drawCentreString("Hello, world!", centerX, 30, FONT_SIZE);
-  tft.drawCentreString("Touch screen to test", centerX, centerY, FONT_SIZE);
-
+  tft.setTextDatum(textdatum_t::baseline_center);
+  tft.setFont(&fonts::FreeSans12pt7b);
+  tft.drawString("Touch screen\nto test", tft.width() / 2, tft.height() / 2);
 }
 
 void updateTouch() {
-  // Checks if Touchscreen was touched, and saves X, Y and Pressure (Z) info 
-  if (touchscreen.tirqTouched() && touchscreen.touched()) {
-    // Get Touchscreen points
-    TS_Point p = touchscreen.getPoint();
-    // Calibrate Touchscreen points with map function to the correct width and height
-    // // TODO what the magic number?
-    // y = map(p.y, 0, 4095, 1, tft.width());
-    // x = map(p.x, 0, 4095, 1, tft.height());
-    touchX = p.x;
-    touchY = p.y;
-    touchZ = p.z;
+  uint16_t x, y;
+  if (tft.getTouch(&x, &y)) {
+    touchX = x;
+    touchY = y;
     touchActive = true;
+    // tft.fillScreen(TFT_BLACK);
   }
   else {
     touchActive = false;
@@ -69,9 +64,7 @@ void printTouchToSerial() {
     Serial.print(touchX);
     Serial.print(", ");
     Serial.print(touchY);
-    Serial.print(") | Pressure = ");
-    Serial.print(touchZ);
-    Serial.println();
+    Serial.println(")");
   }
   else {
     Serial.println("idle");
@@ -80,26 +73,30 @@ void printTouchToSerial() {
 
 // Print Touchscreen info about X, Y and Pressure (Z) on the TFT Display
 void printTouchToDisplay() {
-  // Clear TFT screen
-  // tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(0, tft.height() / 2);
+  tft.setTextColor(0xFFFFFFU, 0);
+  tft.setTextDatum(textdatum_t::middle_center);
+  tft.setTextSize(1);
 
-  int centerX = SCREEN_HEIGHT / 2;
-  int textY = 80;
- 
-  String tempText = "   X = " + String(touchX) + "   ";
-  tft.drawCentreString(tempText, centerX, textY, FONT_SIZE);
+  tft.setFont(&fonts::FreeSans18pt7b);
+  tft.printf("    X:");
+  tft.setFont(&fonts::Font7); // Font7 looks like 7-segment tft displays.
+  tft.setTextSize(0.75);
+  tft.printf("% 5d\n", touchX);
+  
+  tft.setTextSize(1);
+  tft.setFont(&fonts::FreeSans18pt7b);
+  tft.printf("    Y:");
+  tft.setFont(&fonts::Font7); // Font7 looks like 7-segment tft displays.
+  tft.setTextSize(0.75);
+  tft.printf("% 5d", touchY);
 
-  textY += 20;
-  tempText = "   Y = " + String(touchY) + "   ";
-  tft.drawCentreString(tempText, centerX, textY, FONT_SIZE);
+  tft.setTextSize(1);
 
-  textY += 20;
-  tempText = "   Pressure = " + String(touchZ) + "   ";
-  tft.drawCentreString(tempText, centerX, textY, FONT_SIZE);
 }
 
 void printStringToDisplay(String str) {
+  tft.setFont(&fonts::FreeSans9pt7b);
   tft.setCursor(0, 5);
   tft.println(str);
 }

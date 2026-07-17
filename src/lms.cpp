@@ -59,12 +59,34 @@ void printSensorsToSerial() {
 
 }
 
-void printSensorsToDisplay() {
-  String strAccel = " Accel: " + accelReading.toString(2);
+void printSensorsToDisplay_original() {
+  String strAccel = " Acc: " + accelReading.toString(2);
   String strMag = " Mag: " + magReading.toString(2);
   String strSpaces = "      \n"; // Add spaces to clear previous text
   String strCombined = strAccel + strSpaces + strMag + strSpaces;
   printStringToDisplay(strCombined);
+}
+
+void printSensorsToDisplay() {
+    tft.setTextWrap(false);
+    tft.setCursor(5, 15);
+
+    tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
+    tft.print("Acc: ");
+    tft.setFont(&fonts::Font7); tft.setTextSize(0.35);
+    tft.printf("% 2.2f : % 2.2f : % 2.2f        ", 
+        accelReading.x, accelReading.y, accelReading.z);
+
+    tft.setCursor(5, 35);
+    tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
+    tft.print("Mag: ");
+    tft.setFont(&fonts::Font7); tft.setTextSize(0.35);
+    tft.printf("% 2.1f : % 2.1f : % 2.1f        ", 
+        magReading.x, magReading.y, magReading.z);
+
+    tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
+    tft.setClipRect(0, 0, tft.width(), tft.height());
+
 }
 
 Vector3f getAccelReading() {

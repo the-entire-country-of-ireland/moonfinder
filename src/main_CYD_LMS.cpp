@@ -6,11 +6,13 @@
 // void setup() {
 //   Serial.begin(115200);
 
-//    initSensors();
-//    initDisplay(2);
+//   initSensors();
+//   initDisplay(2);
 
-//    delay(500);
-//    tft.fillScreen(TFT_BLACK);
+//   delay(50);
+//   tft.fillScreen(TFT_BLACK);
+//   loop();
+//   tft.fillScreen(TFT_BLACK);
 
 // }
 

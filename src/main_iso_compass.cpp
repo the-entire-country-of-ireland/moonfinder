@@ -15,12 +15,12 @@ Eigen::Matrix<double,10,10> S;
 void setup() {
     Serial.begin(115200);
 
-    initDisplay(2);
+    initDisplay(0);
     initSensors();
     delay(50);
 
     tft.fillScreen(TFT_BLACK);
-    tft.invertDisplay(1);
+    
     tft.drawCentreString("Drag to rotate", tft.width() / 2, 25, 4);
     drawScene(rotationX, rotationY, rotationZ);
 
@@ -105,8 +105,7 @@ void loop() {
 
     auto magReading = getMagReading();
     const Vec3 point{magReading.x, magReading.y, magReading.z};
-    renderPoint(point, TFT_PURPLE);
-    tft.invertDisplay(1);
+    renderPoint(point, TFT_PINK);
 
     onlineUpdateEllipsoid();
 

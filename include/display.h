@@ -3,32 +3,20 @@
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
-#include <Wire.h>
-#include <SPI.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ILI9341.h>
-#include <TFT_eSPI.h>
-#include <XPT2046_Touchscreen.h>
+#include "LGFX_ESP32_2432S028R_CYD.hpp"
 
-extern TFT_eSPI tft;
-
-// Touchscreen pins
-#define XPT2046_IRQ 36   // T_IRQ
-#define XPT2046_MOSI 32  // T_DIN
-#define XPT2046_MISO 39  // T_OUT
-#define XPT2046_CLK 25   // T_CLK
-#define XPT2046_CS 33    // T_CS
-
-extern SPIClass touchscreenSPI;
-extern XPT2046_Touchscreen touchscreen;
-
-
-// Touchscreen coordinates: (x, y) and pressure (z)
-extern int touchX, touchY, touchZ;
-extern bool touchActive;
 
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
+
+extern LGFX tft;
+extern LGFX_Sprite sprite;
+
+
+// Touchscreen coordinates: (x, y) and pressure (z)
+extern int16_t touchX, touchY;
+extern bool touchActive;
+
 
 void initDisplay(int rotation=0);
 void updateTouch();
