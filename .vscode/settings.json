@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "C:/Users/vivia/Documents/PlatformIO/Projects/moonlight-260709-esp32dev/backup/units",
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python.defaultInterpreterPath": "C:\\Users\\vivia\\miniconda3\\python.exe"
+}

@@ -8,7 +8,8 @@
 #include <Adafruit_LSM303_Accel.h>
 #include <Adafruit_LIS2MDL.h>
 #include <Adafruit_Sensor.h>
-#include "AHRS.h"
+#include "online_calibration.h"
+
 #include "display.h"
 
 #define SDA 22
@@ -17,11 +18,17 @@
 extern Adafruit_LSM303_Accel_Unified accel;
 extern Adafruit_LIS2MDL lis2mdl;
 
+extern Eigen::Vector3d magPoint;
+extern Eigen::Vector3d accPoint;
+extern Eigen::Vector3d magPointTrans;
+extern Eigen::Vector3d accPointTrans;
+extern AffineFinder calibration;
+
 void initSensors();
 void updateSensors();
-void printSensorsToSerial();
-void printSensorsToDisplay();
-Vector3f getAccelReading();
-Vector3f getMagReading();
+void printSensorsToSerial(bool transformed=true);
+void printSensorsToDisplay(bool transformed=true);
+Eigen::Vector3d getAccelReading();
+Eigen::Vector3d getMagReading();
 
 #endif // LMS_H
