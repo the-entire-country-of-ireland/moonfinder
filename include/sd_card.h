@@ -4,6 +4,7 @@
 #include <FS.h>
 #include <SD.h>
 #include <SPI.h>
+#include <ArduinoEigen.h>
 
 class SDCard {
 private:
@@ -26,6 +27,7 @@ public:
   // Returns the filename created, or empty string on failure
   String createFile(const String& prefix, const String& folder = "/data");
   
+  
   // Append line to current file
   bool appendLine(const String& data);
   
@@ -37,12 +39,19 @@ public:
   
   // Check if initialized
   bool isInitialized() const { return _initialized; }
+  bool isAvailable() const {return isInitialized() && !_current_filename.isEmpty(); }
   
   // Get card info
   uint64_t getCardSize();
   uint64_t getUsedSpace();
   uint64_t getFreeSpace();
   String getCardType();
+  
+  // navigate directory, read and write
+  void printDirectory(const char* path = "/", uint8_t levels = 0);
+  void printFileLines(const char* filename);
+  bool loadCalibrationData(const std::string& filename,  
+    Eigen::Matrix3d& M,  Eigen::Vector3d& c);
 };
 
 #endif

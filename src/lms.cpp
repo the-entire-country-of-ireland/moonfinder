@@ -5,17 +5,25 @@
 #include <Adafruit_LSM303_Accel.h>
 #include <Adafruit_LIS2MDL.h>
 #include <Adafruit_Sensor.h>
-#include "AHRS.h"
+#include <ArduinoEigen.h>
+
+#include "lms.h"
 #include "display.h"
+#include "online_calibration.h"
 
 #define SDA 22
 #define SCL 27
 
-Vector3f accelReading;
-Vector3f magReading;
-
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
 Adafruit_LIS2MDL lis2mdl = Adafruit_LIS2MDL(12345);
+
+Eigen::Vector3d magPoint;
+Eigen::Vector3d accPoint;
+Eigen::Vector3d magPointTrans;
+Eigen::Vector3d accPointTrans;
+
+double target = -0.5;
+AffineFinder calibration(target);
 
 void initSensors() {
     Wire.begin(SDA, SCL);
@@ -39,58 +47,65 @@ void initSensors() {
     }
 }
 
+
+
 void updateSensors() {
   sensors_event_t accelEvent;
   sensors_event_t magEvent;
 
   accel.getEvent(&accelEvent);
-  accelReading = Vector3f(accelEvent.acceleration.x, accelEvent.acceleration.y, accelEvent.acceleration.z);
+  accPoint = Eigen::Vector3d(accelEvent.acceleration.x, accelEvent.acceleration.y, accelEvent.acceleration.z);
+  accPointTrans = accPoint.normalized();
 
   lis2mdl.getEvent(&magEvent);
-  magReading = Vector3f(magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z);
+  magPoint = Eigen::Vector3d(magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z);
+  magPointTrans = calibration.transform(magPoint);
 
+  
 }
 
-void printSensorsToSerial() {
-  Serial.print("Accel: ");
-  accelReading.println(2);
-  Serial.print("Mag: ");
-  magReading.println(2);
-
+void printSensorsToSerial(bool transformed) {
+    Serial.print("Accel: ");
+    if(transformed)
+        printEigen(accPointTrans);
+    else
+        printEigen(accPoint);
+    Serial.print("Mag: ");
+    
+    if(transformed)
+        printEigen(magPointTrans);
+    else
+        printEigen(magPoint);
 }
 
-void printSensorsToDisplay_original() {
-  String strAccel = " Acc: " + accelReading.toString(2);
-  String strMag = " Mag: " + magReading.toString(2);
-  String strSpaces = "      \n"; // Add spaces to clear previous text
-  String strCombined = strAccel + strSpaces + strMag + strSpaces;
-  printStringToDisplay(strCombined);
-}
 
-void printSensorsToDisplay() {
+void printSensorsToDisplay(bool transformed) {
     tft.setTextWrap(false);
 
+    Eigen::Vector3d accTmp = accPoint;
+    Eigen::Vector3d magTmp = magPoint;
+    if(transformed) {
+        accTmp = accPointTrans;
+        magTmp = magPointTrans;
+    }
+
     tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
+    tft.setCursor(5, 5);
     tft.print("Acc: ");
     tft.setFont(&fonts::Font7); tft.setTextSize(0.35);
-    tft.printf("% 2.2f : % 2.2f : % 2.2f        ", 
-        accelReading.x, accelReading.y, accelReading.z);
+    tft.printf("% 2.2f , % 2.2f , % 2.2f        ", accTmp[0], accTmp[1], accTmp[2]);
 
-    tft.setCursor(5, 40);
+    tft.setCursor(5, 25);
     tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
     tft.print("Mag: ");
     tft.setFont(&fonts::Font7); tft.setTextSize(0.35);
-    tft.printf("% 2.1f : % 2.1f : % 2.1f        ", 
-        magReading.x, magReading.y, magReading.z);
-
-    tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
-    tft.setClipRect(0, 0, tft.width(), tft.height());
+    tft.printf("% 2.2f , % 2.2f , % 2.2f        ", magTmp[0], magTmp[1], magTmp[2]);
 
 }
 
-Vector3f getAccelReading() {
-    return accelReading;
+Eigen::Vector3d getAccelReading() {
+    return accPointTrans;
 }
-Vector3f getMagReading() {
-    return magReading;
+Eigen::Vector3d getMagReading() {
+    return magPointTrans;
 }

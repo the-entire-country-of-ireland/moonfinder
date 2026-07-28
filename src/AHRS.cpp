@@ -3,8 +3,8 @@
 using namespace bfs;    // for wrldmagm()
 
 // globals shared with Attitude.ino
-Vector3f   body[3];
-Vector3f   refv[3];
+Vec3   body[3];
+Vec3   refv[3];
 float      wght[3];
 Quaternion q_smooth;
 float decl, cos_decl, sin_decl;
@@ -19,8 +19,8 @@ void initReferenceVectors() {
   
 
   // 2) Earth‐frame reference vectors in East-North-Up
-  refv[0] = Vector3f{0, 0, -1};                    // gravity down
-  refv[1] = Vector3f{-0.08036317018458757, 0.4135656507192516, 0.9069207316094637};  // magnetic north
+  refv[0] = Vec3{0, 0, -1};                    // gravity down
+  refv[1] = Vec3{-0.08036317018458757, 0.4135656507192516, 0.9069207316094637};  // magnetic north
 
   // 3) Weights
   wght[0] = 3.0f;
@@ -30,16 +30,16 @@ void initReferenceVectors() {
   q_smooth = Quaternion{1, 0, 0, 0};
 }
 
-Quaternion DavenportQMethod(const Vector3f* body,
-                             const Vector3f* refv,
+Quaternion DavenportQMethod(const Vec3* body,
+                             const Vec3* refv,
                              const float* wght,
                              int n) {
     // Build 3x3 B matrix
     float B[3][3] = {{0}};
     for (int i = 0; i < n; ++i) {
         float w = wght[i];
-        const Vector3f& b = body[i];
-        const Vector3f& r = refv[i];
+        const Vec3& b = body[i];
+        const Vec3& r = refv[i];
         for (int j = 0; j < 3; ++j)
             for (int k = 0; k < 3; ++k)
                 B[j][k] += w * b[j] * r[k];
@@ -53,7 +53,7 @@ Quaternion DavenportQMethod(const Vector3f* body,
             S[i][j] = B[i][j] + B[j][i];
     }
 
-    Vector3f Z = {
+    Vec3 Z = {
         B[1][2] - B[2][1],
         B[2][0] - B[0][2],
         B[0][1] - B[1][0]
@@ -82,8 +82,8 @@ Quaternion DavenportQMethod(const Vector3f* body,
     return q;
 }
 
-Vector3f applyAffineTransformation(const Vector3f& raw_vector, const float AFFINE_TRANSFORMATION[4][4]){
-    return Vector3f{
+Vec3 applyAffineTransformation(const Vec3& raw_vector, const float AFFINE_TRANSFORMATION[4][4]){
+    return Vec3{
         AFFINE_TRANSFORMATION[0][0] * raw_vector.x +
         AFFINE_TRANSFORMATION[0][1] * raw_vector.y +
         AFFINE_TRANSFORMATION[0][2] * raw_vector.z +
@@ -102,8 +102,8 @@ Vector3f applyAffineTransformation(const Vector3f& raw_vector, const float AFFIN
 }
 
 
-Vector3f applyLinearTransformation(const Vector3f& raw_vector, const float LINEAR_TRANSFORMATION[3][3]){
-    return Vector3f{
+Vec3 applyLinearTransformation(const Vec3& raw_vector, const float LINEAR_TRANSFORMATION[3][3]){
+    return Vec3{
         LINEAR_TRANSFORMATION[0][0] * raw_vector.x +
         LINEAR_TRANSFORMATION[0][1] * raw_vector.y +
         LINEAR_TRANSFORMATION[0][2] * raw_vector.z,
@@ -187,34 +187,34 @@ void transposeMatrixInPlace(float matrix[3][3]) {
 
 
 
-Vector3f computeDeviceOrientationENU(Vector3f& accel_v, Vector3f& mag_v) {
+Vec3 computeDeviceOrientationENU(Vec3& accel_v, Vec3& mag_v) {
     // Normalize accelerometer readings to get the "Up" vector
-    Vector3f up = accel_v.normalized(); // "Up" is aligned with gravity (accelerometer)
+    Vec3 up = accel_v.normalized(); // "Up" is aligned with gravity (accelerometer)
 
     // Magnetic north vector in the ENU frame (provided)
-    Vector3f magnetic_north_enu = Vector3f(0.4135656507192516, -0.08036317018458757, 0.9069207316094637);
+    Vec3 magnetic_north_enu = Vec3(0.4135656507192516, -0.08036317018458757, 0.9069207316094637);
 
     // Remove the "Up" component from the magnetic north vector to get the horizontal component
-    Vector3f N_mag = (magnetic_north_enu - up * (magnetic_north_enu.dot(up))).normalized();
+    Vec3 N_mag = (magnetic_north_enu - up * (magnetic_north_enu.dot(up))).normalized();
 
     // Define the true north vector in the horizontal NE plane
-    Vector3f N = Vector3f(0, 1, 0); // True north in the ENU frame lies along the Y-axis
+    Vec3 N = Vec3(0, 1, 0); // True north in the ENU frame lies along the Y-axis
 
     // Compute the angle between N_mag and N in the horizontal plane
     float cos_theta = N_mag.dot(N); // Cosine of the angle
     float sin_theta = N_mag.cross(N).dot(up); // Sine of the angle (using the "Up" axis for direction)
 
     // Perform a rotation around the "Up" axis by the angle to align N_mag with N
-    Vector3f north = N_mag * cos_theta + up.cross(N_mag) * sin_theta + up * (up.dot(N_mag) * (1 - cos_theta));
+    Vec3 north = N_mag * cos_theta + up.cross(N_mag) * sin_theta + up * (up.dot(N_mag) * (1 - cos_theta));
 
     // Compute the "East" vector as the cross product of "North" and "Up"
-    Vector3f east = north.cross(up).normalized();
+    Vec3 east = north.cross(up).normalized();
 
     // The device's X-axis in the body frame is {1, 0, 0}
-    Vector3f x_axis_body = Vector3f(1, 0, 0);
+    Vec3 x_axis_body = Vec3(1, 0, 0);
 
     // Transform the X-axis from the body frame to the ENU frame
-    Vector3f x_axis_enu = (east * x_axis_body.x +
+    Vec3 x_axis_enu = (east * x_axis_body.x +
                   north * x_axis_body.y +
                   up * x_axis_body.z).normalized();
 

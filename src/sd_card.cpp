@@ -1,4 +1,7 @@
 #include "sd_card.h"
+#include <ArduinoEigen.h>
+#include <fstream>
+#include <iostream>
 
 SDCard::SDCard(uint8_t cs_pin, uint8_t sck_pin, uint8_t miso_pin, uint8_t mosi_pin) 
   : _cs_pin(cs_pin), _initialized(false) {
@@ -183,3 +186,144 @@ String SDCard::getCardType() {
     default:        return "UNKNOWN";
   }
 }
+
+void SDCard::printDirectory(const char* path, uint8_t levels) {
+  File root = SD.open(path);
+  if (!root) {
+    Serial.printf("Failed to open directory: %s\n", path);
+    return;
+  }
+
+  if (!root.isDirectory()) {
+    Serial.printf("%s is not a directory\n", path);
+    root.close();
+    return;
+  }
+
+  Serial.printf("Listing directory: %s\n", path);
+
+  File file = root.openNextFile();
+  while (file) {
+    if (file.isDirectory()) {
+      Serial.printf("DIR : %s\n", file.name());
+
+      // Recurse into subdirectories if levels > 0
+      if (levels > 0) {
+        printDirectory(file.path(), levels - 1);
+      }
+    } else {
+      Serial.printf("FILE: %s  SIZE: %lu bytes\n",
+                    file.name(),
+                    (unsigned long)file.size());
+    }
+
+    file = root.openNextFile();
+  }
+
+  root.close();
+}
+
+void SDCard::printFileLines(const char* filename) {
+  File file = SD.open(filename);
+  if (!file) {
+    Serial.printf("Failed to open %s\n", filename);
+    return;
+  }
+
+  if (file.isDirectory()) {
+    Serial.printf("%s is a directory, not a file\n", filename);
+    file.close();
+    return;
+  }
+
+  Serial.printf("Contents of %s:\n", filename);
+
+  while (file.available()) {
+    Serial.println(file.readStringUntil('\n'));
+  }
+
+  file.close();
+}
+
+bool SDCard::loadCalibrationData(const std::string& filename, 
+                                  Eigen::Matrix3d& M, 
+                                  Eigen::Vector3d& c) {
+  File file = SD.open(filename.c_str());
+  if (!file) {
+    Serial.printf("Failed to open file: %s\n", filename.c_str());
+    return false;
+  }
+
+  if (file.isDirectory()) {
+    Serial.printf("%s is a directory, not a file\n", filename.c_str());
+    file.close();
+    return false;
+  }
+
+  // Read 3x3 matrix (3 lines, 3 values per line)
+  for (int i = 0; i < 3; i++) {
+    if (!file.available()) {
+      Serial.printf("Error: unexpected end of file at matrix row %d\n", i);
+      file.close();
+      return false;
+    }
+    
+    String line = file.readStringUntil('\n');
+    line.trim();
+    
+    // Parse space-separated values
+    int startIdx = 0;
+    for (int j = 0; j < 3; j++) {
+      int spaceIdx = line.indexOf(' ', startIdx);
+      String value;
+      
+      if (spaceIdx == -1) {
+        value = line.substring(startIdx);  // last value on line
+      } else {
+        value = line.substring(startIdx, spaceIdx);
+        startIdx = spaceIdx + 1;
+      }
+      
+      M(i, j) = value.toDouble();
+    }
+  }
+
+  // Read 3D vector (1 line, 3 values)
+  if (!file.available()) {
+    Serial.println("Error: unexpected end of file while reading vector c");
+    file.close();
+    return false;
+  }
+  
+  String line = file.readStringUntil('\n');
+  line.trim();
+  
+  int startIdx = 0;
+  for (int i = 0; i < 3; i++) {
+    int spaceIdx = line.indexOf(' ', startIdx);
+    String value;
+    
+    if (spaceIdx == -1) {
+      value = line.substring(startIdx);
+    } else {
+      value = line.substring(startIdx, spaceIdx);
+      startIdx = spaceIdx + 1;
+    }
+    
+    c(i) = value.toDouble();
+  }
+
+  file.close();
+  Serial.printf("Successfully loaded calibration from %s\n", filename.c_str());
+  
+  // Optional: print what was loaded
+  Serial.println("Matrix M:");
+  for (int i = 0; i < 3; i++) {
+    Serial.printf("  %f %f %f\n", M(i, 0), M(i, 1), M(i, 2));
+  }
+  Serial.println("Vector c:");
+  Serial.printf("  %f %f %f\n", c(0), c(1), c(2));
+  
+  return true;
+}
+

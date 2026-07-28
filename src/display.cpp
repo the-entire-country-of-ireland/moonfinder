@@ -38,9 +38,9 @@ void initDisplay(int rotation) {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   
-  tft.setTextDatum(textdatum_t::baseline_center);
-  tft.setFont(&fonts::FreeSans12pt7b);
-  tft.drawString("Touch screen\nto test", tft.width() / 2, tft.height() / 2);
+  // tft.setTextDatum(textdatum_t::baseline_center);
+  // tft.setFont(&fonts::FreeSans12pt7b);
+  // tft.drawString("Touch screen to test", tft.width() / 2, tft.height() / 2);
 }
 
 void updateTouch() {

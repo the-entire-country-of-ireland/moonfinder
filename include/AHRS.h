@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>  // Needed for String
+#include <ArduinoEigen.h>
 
 // Location: Baltimore, MD (WGS84)
 static const float LAT      = 39.2904f;
@@ -11,62 +12,74 @@ static const float DECYEAR  = 2026.323f;   // 2025 + (dayOfYear/365)
 static const float BETA     = 0.1f;
 
 
-struct Vector3f {
+struct Vec3 {
     float x, y, z;
 
-    Vector3f() : x(0), y(0), z(0) {}
-    Vector3f(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
-    Vector3f(const float arr[3]) : x(arr[0]), y(arr[1]), z(arr[2]) {}
+    Vec3() : x(0), y(0), z(0) {}
+    Vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+    Vec3(const float arr[3]) : x(arr[0]), y(arr[1]), z(arr[2]) {}
 
     float operator[](int i) const {
         if (i == 0) return x;
         if (i == 1) return y;
-        return z;
+        if (i == 2) return z;
+        return NAN;
     }
 
-    Vector3f operator+(const Vector3f& other) const {
-        return Vector3f(x + other.x, y + other.y, z + other.z);
+    // Implicit conversion to Eigen types
+    operator Eigen::Vector3f() const {
+        return Eigen::Vector3f(x, y, z);
     }
 
-    Vector3f operator-(const Vector3f& other) const {
-        return Vector3f(x - other.x, y - other.y, z - other.z);
+    operator Eigen::Vector3d() const {
+        return Eigen::Vector3d(static_cast<double>(x),
+                                static_cast<double>(y),
+                                static_cast<double>(z));
     }
 
-    Vector3f operator-() const {
-        return Vector3f(-x, -y, -z);
+    Vec3 operator+(const Vec3& other) const {
+        return Vec3(x + other.x, y + other.y, z + other.z);
     }
 
-    Vector3f operator*(float scalar) const {
-        return Vector3f(x * scalar, y * scalar, z * scalar);
+    Vec3 operator-(const Vec3& other) const {
+        return Vec3(x - other.x, y - other.y, z - other.z);
     }
 
-    Vector3f operator/(float scalar) const {
-        if (scalar == 0) return Vector3f(0, 0, 0); // Handle division by zero
-        return Vector3f(x / scalar, y / scalar, z / scalar);
+    Vec3 operator-() const {
+        return Vec3(-x, -y, -z);
     }
 
-    Vector3f& operator+=(const Vector3f& other) {
+    Vec3 operator*(float scalar) const {
+        return Vec3(x * scalar, y * scalar, z * scalar);
+    }
+
+    Vec3 operator/(float scalar) const {
+        if (scalar == 0) return Vec3(0, 0, 0); // Handle division by zero
+        return Vec3(x / scalar, y / scalar, z / scalar);
+    }
+
+    Vec3& operator+=(const Vec3& other) {
         x += other.x;
         y += other.y;
         z += other.z;
         return *this;
     }
 
-    Vector3f& operator-=(const Vector3f& other) {
+    Vec3& operator-=(const Vec3& other) {
         x -= other.x;
         y -= other.y;
         z -= other.z;
         return *this;
     }
 
-    Vector3f& operator*=(float scalar) {
+    Vec3& operator*=(float scalar) {
         x *= scalar;
         y *= scalar;
         z *= scalar;
         return *this;
     }
 
-    Vector3f& operator/=(float scalar) {
+    Vec3& operator/=(float scalar) {
         if (scalar != 0) { // Avoid division by zero
             x /= scalar;
             y /= scalar;
@@ -76,12 +89,12 @@ struct Vector3f {
     }
     
 
-    float dot(const Vector3f& other) const {
+    float dot(const Vec3& other) const {
         return x * other.x + y * other.y + z * other.z;
     }
 
-    Vector3f cross(const Vector3f& other) const {
-        return Vector3f(
+    Vec3 cross(const Vec3& other) const {
+        return Vec3(
             y * other.z - z * other.y,
             z * other.x - x * other.z,
             x * other.y - y * other.x
@@ -92,10 +105,10 @@ struct Vector3f {
         return sqrt(x * x + y * y + z * z);
     }
 
-    Vector3f normalized() const {
+    Vec3 normalized() const {
         float n = norm();
-        if (n == 0) return Vector3f(0, 0, 0);
-        return Vector3f(x / n, y / n, z / n);
+        if (n == 0) return Vec3(0, 0, 0);
+        return Vec3(x / n, y / n, z / n);
     }
 
     String toString(int decimalPoints = 2) const {
@@ -162,24 +175,24 @@ void initReferenceVectors();
 void QuaternionToRotationMatrix(const Quaternion& q, float rotationMatrix[3][3]);
 Quaternion RotationMatrixToQuaternion(const float rotationMatrix[3][3]);
 
-Quaternion DavenportQMethod(const Vector3f* body,
-                             const Vector3f* refv,
+Quaternion DavenportQMethod(const Vec3* body,
+                             const Vec3* refv,
                              const float* wght,
                              int n);
 
 
 // Function to apply affine transformation
-Vector3f applyAffineTransformation(const Vector3f& raw_vector, const float AFFINE_TRANSFORMATION[4][4]);
+Vec3 applyAffineTransformation(const Vec3& raw_vector, const float AFFINE_TRANSFORMATION[4][4]);
 // Function to apply linear transformation
-Vector3f applyLinearTransformation(const Vector3f& raw_vector, const float LINEAR_TRANSFORMATION[3][3]);
+Vec3 applyLinearTransformation(const Vec3& raw_vector, const float LINEAR_TRANSFORMATION[3][3]);
 
 // Function to transpose a 3x3 matrix in-place
 void transposeMatrixInPlace(float matrix[3][3]);
-Vector3f computeDeviceOrientationENU(Vector3f& accel_v, Vector3f& mag_v);
+Vec3 computeDeviceOrientationENU(Vec3& accel_v, Vec3& mag_v);
 
 
 extern Quaternion q_smooth;
-extern Vector3f   body[3];
-extern Vector3f   refv[3];
+extern Vec3   body[3];
+extern Vec3   refv[3];
 extern float      wght[3];
 extern float decl, cos_decl, sin_decl;
