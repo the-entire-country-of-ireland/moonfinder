@@ -199,9 +199,13 @@ void loop() {
     Vector3d magnetic_north_enu = Vector3d(0.4135656507192516, -0.08036317018458757, 0.9069207316094637);
     Orientation orient = computeOrientation(
         accPointTrans, magPointTrans, gravity_enu, magnetic_north_enu);
-    Serial.println("Device X-axis in ENU:");
+    Serial.println("Device x-axis in ENU:");
     printVector3d(orient.x_enu);
-    printVectorToDisplay("ENU: ", orient.x_enu, 45);
+    Serial.println("Device y-axis in ENU:");
+    printVector3d(orient.y_enu);
+    Serial.println("Device z-axis in ENU:");
+    printVector3d(orient.z_enu);
+    printVectorToDisplay("ENU: ", orient.z_enu, 45);
     
     delay(30);
 }
