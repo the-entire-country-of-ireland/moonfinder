@@ -1,6 +1,7 @@
 // ESP32-2432S028R 2.8 inch 240×320 also known as the Cheap Yellow Display (CYD)*/
 
 #include "display.h"
+#include <ArduinoEigen.h>
 
 LGFX tft;
 LGFX_Sprite sprite(&tft);
@@ -99,4 +100,18 @@ void printStringToDisplay(String str) {
   tft.setFont(&fonts::FreeSans9pt7b);
   tft.setCursor(0, 5);
   tft.println(str);
+}
+
+void printVectorToDisplay(const char * str, const Eigen::Vector3d vec, int height) {
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setFont(&fonts::FreeSans9pt7b);
+  tft.setTextSize(1);
+  tft.setCursor(5, height);
+  tft.print(str);
+  tft.setFont(&fonts::Font7);
+  tft.setTextSize(0.35);
+  tft.printf("% 2.2f , % 2.2f , % 2.2f        ",
+      vec[0], vec[1], vec[2]);
+  tft.setFont(&fonts::FreeSans9pt7b);
+  tft.setTextSize(1);
 }

@@ -191,17 +191,9 @@ void drawAxes(const Matrix3d& R, float scale, int cx, int cy) {
 void drawRotation() {
     float rx, ry, rz;
     matrixToEuler(currentRotation, rx, ry, rz);
-    
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setFont(&fonts::FreeSans9pt7b); 
-    tft.setTextSize(1);
-    tft.setCursor(5, 300);
-    tft.print("Rot: ");
-    tft.setFont(&fonts::Font7); 
-    tft.setTextSize(0.35);
-    tft.printf("% 1.2f : % 1.2f : % 1.2f        ", rx, ry, rz);
-    tft.setFont(&fonts::FreeSans9pt7b); 
-    tft.setTextSize(1);
+    Eigen::Vector3d vec(rx, ry, rz);
+
+    printVectorToDisplay("Rot: ", vec, 300);
 }
 
 void drawScene() {

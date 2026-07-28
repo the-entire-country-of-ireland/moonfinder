@@ -24,6 +24,8 @@ void printTouchToSerial();
 void printTouchToDisplay();
 void printStringToDisplay(String str);
 
+void printVectorToDisplay(const char * str, const Eigen::Vector3d vec, int height);
+
 template <typename Derived>
 void printEigen(const Eigen::MatrixBase<Derived>& m, uint8_t digits = 2)
 {

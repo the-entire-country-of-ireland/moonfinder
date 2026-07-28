@@ -7,7 +7,7 @@
 #include "lms.h"
 #include "sd_card.h"
 #include "online_calibration.h"
-#include "StreamingMagCalibrationEigen.h"
+#include "AHRS.h"
 
 using Eigen::Vector3d;
 using Eigen::Vector2d;
@@ -181,7 +181,7 @@ void loop() {
         lastTouchY = -1;
     }
 
-    printSensorsToSerial();
+    // printSensorsToSerial();
     printSensorsToDisplay(true);
         
     renderPoint(magPointTrans, TFT_RED, 50.0f);
@@ -189,11 +189,19 @@ void loop() {
 
     tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
     tft.setCursor(5, 250);
-    tft.printf("Norm: %2.2f     %2.2f         ", magPointTrans.dot(magPointTrans), accPoint.dot(accPoint));
+    tft.printf("Norm: %2.2f     %2.2f         ", magPointTrans.dot(magPointTrans), accPoint.dot(accPoint) / (9.8 * 9.8));
     tft.setCursor(5, 275);
     tft.printf("Overlap: %2.2f      %2.2f        ", magPointTrans.dot(accPointTrans), magPointTrans.normalized().dot(accPointTrans));
 
     
+    // Example sensor readings (device frame)
+    Vector3d gravity_enu = Vector3d(0.0, 0.0, 1.0);
+    Vector3d magnetic_north_enu = Vector3d(0.4135656507192516, -0.08036317018458757, 0.9069207316094637);
+    Orientation orient = computeOrientation(
+        accPointTrans, magPointTrans, gravity_enu, magnetic_north_enu);
+    Serial.println("Device X-axis in ENU:");
+    printVector3d(orient.x_enu);
+    printVectorToDisplay("ENU: ", orient.x_enu, 45);
     
     delay(30);
 }

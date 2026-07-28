@@ -89,17 +89,8 @@ void printSensorsToDisplay(bool transformed) {
         magTmp = magPointTrans;
     }
 
-    tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
-    tft.setCursor(5, 5);
-    tft.print("Acc: ");
-    tft.setFont(&fonts::Font7); tft.setTextSize(0.35);
-    tft.printf("% 2.2f , % 2.2f , % 2.2f        ", accTmp[0], accTmp[1], accTmp[2]);
-
-    tft.setCursor(5, 25);
-    tft.setFont(&fonts::FreeSans9pt7b); tft.setTextSize(1);
-    tft.print("Mag: ");
-    tft.setFont(&fonts::Font7); tft.setTextSize(0.35);
-    tft.printf("% 2.2f , % 2.2f , % 2.2f        ", magTmp[0], magTmp[1], magTmp[2]);
+    printVectorToDisplay("Acc: ", accTmp, 5);
+    printVectorToDisplay("Mag: ", magTmp, 25);
 
 }
 
