@@ -64,16 +64,16 @@ void loadCalibration() {
     Eigen::Vector3d c;
 
     if(sdCard.isAvailable()) {
-        sdCard.printDirectory("/", 3);
+        sdCard.printDirectory("/data/", 1);
         sdCard.printFileLines(     "/data/calibration.txt");
         sdCard.loadCalibrationData("/data/calibration.txt", M, c);
     }
     else{
         // default values, if no sd card is inserted
-        M << 0.019901868585375338, -0.0009122381747946079 ,-0.002287108565072834,
-            0.0005122987541417046, 0.019109166204179948, -0.002626699489052968,
-            0.00020359458516246116, 3.1138777494018486e-05, 0.015000610327831796;
-        c << -0.2412845757691845, 0.21115784229214826, -0.6067620235094751;
+        M << 0.02191344348162641, -0.000573975309675504, -0.0008785351217481529,
+0.0007582154619115889, 0.020103931916349484, -0.0013875491058414167,
+0.0003737297742823399, -0.0015972984399375007, 0.0165140583871701;
+        c << -0.24466064581052546, 0.2237080518646763, -0.5992611215218402;
     }
     calibration.load(M, c);
     Serial.println("loaded calibration data!");
@@ -195,17 +195,21 @@ void loop() {
 
     
     // Example sensor readings (device frame)
-    Vector3d gravity_enu = Vector3d(0.0, 0.0, 1.0);
-    Vector3d magnetic_north_enu = Vector3d(0.4135656507192516, -0.08036317018458757, 0.9069207316094637);
+    Vector3d gravity_enu = Vector3d(0.0, 0.0, -1.0);
+    Vector3d magnetic_north_enu = Vector3d(-0.08036317018458757, 0.4135656507192516, 0.9069207316094637);
     Orientation orient = computeOrientation(
         accPointTrans, magPointTrans, gravity_enu, magnetic_north_enu);
-    Serial.println("Device x-axis in ENU:");
-    printVector3d(orient.x_enu);
-    Serial.println("Device y-axis in ENU:");
+
+    // Serial.println("Device x-axis in ENU:");
+    // printVector3d(orient.x_enu);
+    // Serial.println("Device y-axis in ENU:");
+    // printVector3d(orient.y_enu);
+    // Serial.println("Device z-axis in ENU:");
+    // printVector3d(orient.z_enu);
+
+    Serial.println("Device axis in ENU:");
     printVector3d(orient.y_enu);
-    Serial.println("Device z-axis in ENU:");
-    printVector3d(orient.z_enu);
-    printVectorToDisplay("ENU: ", orient.z_enu, 45);
+    printVectorToDisplay("ENU: ", orient.y_enu, 45);
     
     delay(30);
 }
