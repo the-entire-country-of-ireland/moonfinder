@@ -10,6 +10,9 @@ class SDCard {
 private:
   SPIClass* _spi;
   uint8_t _cs_pin;
+  uint8_t _sck_pin;
+  uint8_t _miso_pin;
+  uint8_t _mosi_pin;
   String _current_filename;
   bool _initialized;
   
@@ -53,6 +56,10 @@ public:
   void printFileLines(const char* filename);
   bool loadCalibrationData(const std::string& filename,  
     Eigen::Matrix3d& M,  Eigen::Vector3d& c);
+  bool saveCalibrationTransform(const Eigen::Matrix<float, 3, 4>& transform,
+    float target, const char* filename = "/data/calibration.txt");
+  bool loadCalibrationTransform(Eigen::Matrix<float, 3, 4>& transform,
+    float& target, const char* filename = "/data/calibration.txt");
 };
 
 #endif

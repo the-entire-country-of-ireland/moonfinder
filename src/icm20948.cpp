@@ -26,6 +26,7 @@ Eigen::Vector3d gyroPoint;
 Eigen::Vector3d magPointTrans;
 Eigen::Vector3d accPointTrans;
 Eigen::Vector3d gyroPointTrans;
+bool icmReady = false;
 
 double target = -0.907;
 AffineFinder calibration(target);
@@ -58,8 +59,10 @@ void initSensors() {
     Serial.println("\n--- Initializing ICM-20948 ---");
     if (!icm20948.begin_I2C(ICM20948_ADDR)) {
         Serial.println("Failed to find ICM-20948!");
+        icmReady = false;
     } else {
         Serial.println("ICM-20948 Found!");
+        icmReady = true;
         icm20948.setAccelRange(ICM20948_ACCEL_RANGE_2_G);
         icm20948.setGyroRange(ICM20948_GYRO_RANGE_250_DPS);
         icm20948.setMagDataRate(AK09916_MAG_DATARATE_20_HZ);
@@ -90,6 +93,8 @@ bool magReady(ak09916_data_rate_t rate) {
 
 
 void updateSensors() {
+    if (!icmReady) return;
+
     sensors_event_t accel, gyro, mag, temp;
     newMag = magReady(icm20948.getMagDataRate());
     icm20948.getEvent(&accel, &gyro, &temp, &mag);

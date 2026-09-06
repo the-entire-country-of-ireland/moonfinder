@@ -38,10 +38,10 @@ int main(int argc, char** argv) {
   while (std::getline(f, line)) {
     if (line.find("NEW_MEASUREMENTS") != std::string::npos) {
       if (have_sector) {
-        calib.end_sector();
+        calib.finishSector();
         ++sectors_seen;
       }
-      calib.start_new_sector();
+      calib.beginSector();
       have_sector = true;
       continue;
     }
@@ -49,10 +49,10 @@ int main(int argc, char** argv) {
     if (!parse_csv10(line, v)) continue;
     Cal::Vec3 mag(v[0], v[1], v[2]);
     Cal::Vec3 acc(v[3], v[4], v[5]);
-    calib.add_sample(mag, acc);
+    calib.recordSample(mag, acc);
   }
   if (have_sector) {
-    calib.end_sector();
+    calib.finishSector();
     ++sectors_seen;
   }
 
@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
   std::cout << std::setprecision(10);
   std::cout << "sectors_seen " << sectors_seen
             << " accepted " << calib.sectors().size()
-            << " total_samples " << calib.total_sample_count() << "\n";
+            << " total_samples " << calib.totalAcceptedSampleCount() << "\n";
   std::cout << "iterations " << result.iterations
             << " converged " << result.converged
             << " cost " << result.cost << "\n";
@@ -77,11 +77,11 @@ int main(int argc, char** argv) {
   std::cout << "bias\n" << result.bias.transpose() << "\n";
   std::cout << "t\n" << result.t.transpose() << "\n";
   std::cout << "c " << result.c << "\n";
-  std::cout << "norm2_mean " << calib.diagnosticNorm2Mean(result.W)
-            << " norm2_std " << calib.diagnosticNorm2Std(result.W)
-            << " norm2_rms_resid " << calib.diagnosticNorm2RmsResidual(result.W) << "\n";
+  std::cout << "norm2_mean " << calib.diagnosticNormSquaredMean(result.W)
+            << " norm2_std " << calib.diagnosticNormSquaredStddev(result.W)
+            << " norm2_rms_resid " << calib.diagnosticNormSquaredRmsResidual(result.W) << "\n";
   std::cout << "dot_mean " << calib.diagnosticDotMean(result.W)
-            << " dot_std " << calib.diagnosticDotStd(result.W)
+            << " dot_std " << calib.diagnosticDotStddev(result.W)
             << " dot_rms_resid " << calib.diagnosticDotRmsResidual(result.W, result.c) << "\n";
   if (!calib.sectors().empty()) {
     std::cout << "first_axis " << calib.sectors()[0].axis.transpose()

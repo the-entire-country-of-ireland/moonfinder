@@ -4,13 +4,21 @@
 #include <iostream>
 
 SDCard::SDCard(uint8_t cs_pin, uint8_t sck_pin, uint8_t miso_pin, uint8_t mosi_pin) 
-  : _cs_pin(cs_pin), _initialized(false) {
-  _spi = new SPIClass(VSPI);
-  _spi->begin(sck_pin, miso_pin, mosi_pin, cs_pin);
+  : _spi(nullptr),
+    _cs_pin(cs_pin),
+    _sck_pin(sck_pin),
+    _miso_pin(miso_pin),
+    _mosi_pin(mosi_pin),
+    _initialized(false) {
 }
 
 bool SDCard::init() {
   Serial.println("\n=== SD Card Initialization ===");
+
+  if (_spi == nullptr) {
+    _spi = new SPIClass(VSPI);
+    _spi->begin(_sck_pin, _miso_pin, _mosi_pin, _cs_pin);
+  }
   
   if (!SD.begin(_cs_pin, *_spi)) {
     Serial.println("ERROR: SD Card mount failed!");
@@ -369,6 +377,56 @@ bool SDCard::loadCalibrationData(const std::string& filename,
   Serial.println("Vector c:");
   Serial.printf("  %f %f %f\n", c(0), c(1), c(2));
   
+  return true;
+}
+
+bool SDCard::saveCalibrationTransform(const Eigen::Matrix<float, 3, 4>& transform,
+                                      float target, const char* filename) {
+  if (!_initialized) return false;
+  File file = SD.open(filename, FILE_WRITE);
+  if (!file) return false;
+
+  file.println("MOONFINDER_CALIBRATION_V1");
+  file.printf("target %.9g\n", target);
+  for (int row = 0; row < 3; ++row) {
+    file.printf("%.9g %.9g %.9g %.9g\n",
+                transform(row, 0), transform(row, 1),
+                transform(row, 2), transform(row, 3));
+  }
+  file.flush();
+  file.close();
+  return true;
+}
+
+bool SDCard::loadCalibrationTransform(Eigen::Matrix<float, 3, 4>& transform,
+                                      float& target, const char* filename) {
+  if (!_initialized) return false;
+  File file = SD.open(filename, FILE_READ);
+  if (!file) return false;
+
+  String header = file.readStringUntil('\n');
+  header.trim();
+  if (header != "MOONFINDER_CALIBRATION_V1") {
+    file.close();
+    return false;
+  }
+
+  String targetLine = file.readStringUntil('\n');
+  if (sscanf(targetLine.c_str(), "target %f", &target) != 1) {
+    file.close();
+    return false;
+  }
+
+  for (int row = 0; row < 3; ++row) {
+    String line = file.readStringUntil('\n');
+    if (sscanf(line.c_str(), "%f %f %f %f",
+               &transform(row, 0), &transform(row, 1),
+               &transform(row, 2), &transform(row, 3)) != 4) {
+      file.close();
+      return false;
+    }
+  }
+  file.close();
   return true;
 }
 

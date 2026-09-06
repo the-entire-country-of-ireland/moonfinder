@@ -5,6 +5,9 @@
 #include <string>
 #include <iomanip>
 #include <cmath>
+#include <esp_system.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "display.h"
 #include "isometric.h"
@@ -13,135 +16,231 @@
 #include "online_calibration.h"
 #include "AHRS.h"
 #include "sector_calibrator.h"
+#include "utils.h"
 
-using Eigen::Vector3d;
-using Eigen::Vector2d;
+using Eigen::Vector3f;
 
+enum class ScreenMode { Renderer, ConfirmCalibration, Calibration };
+
+SDCard sdCard;
+String foldername;
+sector_calib::SectorCalibrator<float> calib;
+ScreenMode screenMode = ScreenMode::Renderer;
+int collectedSectors = 0;
 int lastTouchX = -1;
 int lastTouchY = -1;
 bool lastTouchActive = false;
+unsigned long lastSampleUs = 0;
 
-SDCard sdCard;  // Uses default VSPI pins
-String foldername;
+const char* resetReasonName(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON: return "POWERON";
+        case ESP_RST_EXT: return "EXT_RESET";
+        case ESP_RST_SW: return "SOFTWARE_RESET";
+        case ESP_RST_PANIC: return "PANIC_EXCEPTION";
+        case ESP_RST_INT_WDT: return "INTERRUPT_WATCHDOG";
+        case ESP_RST_TASK_WDT: return "TASK_WATCHDOG";
+        case ESP_RST_WDT: return "OTHER_WATCHDOG";
+        case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+        case ESP_RST_BROWNOUT: return "BROWNOUT";
+        case ESP_RST_SDIO: return "SDIO";
+        default: return "UNKNOWN";
+    }
+}
 
-sector_calib::SectorCalibrator<double> calib;
-
-void startNewSector();
-void setupSDCard();
+void dumpRuntime(const char* where) {
+    Serial.printf(
+        "[%s] t=%lu heap=%u min_heap=%u stack_hwm=%u sector=%d\n",
+        where,
+        millis(),
+        ESP.getFreeHeap(),
+        ESP.getMinFreeHeap(),
+        uxTaskGetStackHighWaterMark(NULL),
+        calib.currentSectorSampleCount()
+    );
+}
 
 void setupSDCard() {
-    // Initialize SD card
     if (!sdCard.init()) {
-        Serial.println("Failed to initialize SD card!");
+        Serial.println("SD card unavailable; calibration will not be persisted.");
         return;
     }
-    
     foldername = sdCard.createFolder("readings", "/data/magacc_pitch");
-    
     sdCard.printDirectory("/data/magacc_pitch", 2);
-
+        Eigen::Matrix<float, 3, 4> transform;
+        float target = 0.0f;
+        if (sdCard.loadCalibrationTransform(transform, target)) {
+                calibration.load(transform.block<3, 3>(0, 0).cast<double>(),
+                                                 transform.col(3).cast<double>());
+                Serial.println("Loaded optimized calibration from SD card.");
+        }
 }
 
-void printMatrix3d(const Eigen::Matrix3d& mat) {
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      Serial.print(mat(i, j), 6);   // 6 decimal places
-      Serial.print("\t");
+void startNewSector() {
+    if (!sdCard.isInitialized()) return;
+    String filename = sdCard.createFile("sector", foldername);
+    if (filename.isEmpty()) {
+        Serial.println("Failed to create sector file!");
     }
-    Serial.println();
-  }
 }
 
-void printVector3d(const Eigen::Vector3d& vec) {
-  for (int i = 0; i < 3; i++) {
-    Serial.print(vec(i), 6);
-    Serial.println();
-  }
+void drawRendererScreen() {
+    tft.fillScreen(TFT_BLACK);
+    drawScene();
+    printSensorsToDisplay(true);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.fillRoundRect(148, 8, 84, 30, 5, TFT_BLUE);
+    tft.setTextColor(TFT_WHITE, TFT_BLUE);
+    tft.setFont(&fonts::FreeSans9pt7b);
+    tft.drawString("CALIBRATE", 155, 28);
 }
 
-void loadCalibration() {
-    Eigen::Matrix3d M;
-    Eigen::Vector3d c;
+void drawConfirmScreen() {
+    tft.fillScreen(TFT_NAVY);
+    tft.setTextColor(TFT_WHITE, TFT_NAVY);
+    tft.setFont(&fonts::FreeSans12pt7b);
+    tft.setCursor(12, 55);
+    tft.print("START CALIBRATION?");
+    tft.setFont(&fonts::FreeSans9pt7b);
+    tft.setCursor(12, 82);
+    tft.print("Move the sensor through each sector.");
+    tft.fillRoundRect(10, 120, 100, 45, 6, TFT_GREEN);
+    tft.fillRoundRect(130, 120, 100, 45, 6, TFT_RED);
+    tft.setTextColor(TFT_BLACK, TFT_GREEN);
+    tft.drawString("YES", 42, 148);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString("NO", 168, 148);
+}
 
-    if(sdCard.isAvailable()) {
-        sdCard.printDirectory("/data/", 1);
-        sdCard.printFileLines(     "/data/calibration.txt");
-        sdCard.loadCalibrationData("/data/calibration.txt", M, c);
+void drawCalibrationScreen() {
+    const int mid = tft.height() / 2;
+    tft.fillScreen(TFT_MAROON);
+    tft.fillRect(0, 0, tft.width(), mid, TFT_GREEN);
+    tft.setTextColor(TFT_BLACK, TFT_GREEN);
+    tft.setFont(&fonts::FreeSans12pt7b);
+    tft.setCursor(8, 30);
+    tft.print("CALIBRATING");
+    tft.setFont(&fonts::FreeSans9pt7b);
+    tft.setCursor(8, 56);
+    tft.printf("Sector %d   %d / 500 samples", collectedSectors + 1,
+               calib.currentSectorSampleCount());
+    tft.setCursor(8, 82);
+    tft.print("TOP: SAVE + NEXT SECTOR");
+    tft.setTextColor(TFT_WHITE, TFT_MAROON);
+    tft.setFont(&fonts::FreeSans12pt7b);
+    tft.setCursor(8, mid + 40);
+    tft.print("STOP CALIBRATION");
+    tft.setFont(&fonts::FreeSans9pt7b);
+    tft.setCursor(8, mid + 68);
+    tft.printf("BOTTOM: OPTIMIZE + SAVE  (%d done)", collectedSectors);
+}
+
+bool finishCurrentSector() {
+    if (!calib.isCollectingSectorSamples()) return false;
+    dumpRuntime("sector finalize begin");
+    tft.fillScreen(TFT_ORANGE);
+    bool wrote = calib.writeSectorSamplesToFile(sdCard);
+    bool ended = calib.finishSector();
+    if (ended) ++collectedSectors;
+    dumpRuntime(wrote && ended ? "sector finalize ok" : "sector finalize failed");
+    return wrote && ended;
+}
+
+void optimizeAndSaveCalibration() {
+    finishCurrentSector();
+    if (collectedSectors == 0) {
+        screenMode = ScreenMode::Renderer;
+        drawRendererScreen();
+        return;
     }
-    else{
-        // default values, if no sd card is inserted
-        M << 2.217, 0.017, 0.103, 0.132, 2.07, 0.09, -0.161, -0.037, 1.862;
-        M = M / 100.0;
-        c << -0.31, -0.06, -0.499;
+
+    tft.fillScreen(TFT_ORANGE);
+    tft.setTextColor(TFT_BLACK, TFT_ORANGE);
+    tft.setFont(&fonts::FreeSans12pt7b);
+    tft.setCursor(8, 45);
+    tft.print("OPTIMIZING...");
+    sector_calib::SectorCalibrator<float>::SolveOptions options;
+    options.pitch_weight = 1.0f;
+    options.norm_weight = 1.0f;
+    options.dot_weight = 1.0f;
+    options.max_iters = 100;
+    auto result = calib.solve(options, true);
+
+    calibration.load(result.W.block<3, 3>(0, 0).cast<double>(),
+                     result.W.col(3).cast<double>());
+    bool saved = sdCard.saveCalibrationTransform(result.W, result.c);
+    Serial.printf("Calibration sectors=%d samples=%d cost=%.6f saved=%s\n",
+                  collectedSectors, calib.totalAcceptedSampleCount(), result.cost,
+                  saved ? "yes" : "no");
+    screenMode = ScreenMode::Renderer;
+    drawRendererScreen();
+}
+
+void handleTouch() {
+    if (!touchActive || lastTouchActive) return;
+
+    if (screenMode == ScreenMode::Renderer) {
+        if (touchX < 135 && touchY >= 34 && touchY < 70) {
+            screenMode = ScreenMode::ConfirmCalibration;
+            drawConfirmScreen();
+        }
+    } else if (screenMode == ScreenMode::ConfirmCalibration) {
+        if (touchY >= 115 && touchY < 175 && touchX < 120) {
+            collectedSectors = 0;
+            calib.reset();
+            screenMode = ScreenMode::Calibration;
+            startNewSector();
+            calib.beginSector();
+            drawCalibrationScreen();
+        } else if (touchY >= 115 && touchY < 175 && touchX >= 120) {
+            screenMode = ScreenMode::Renderer;
+            drawRendererScreen();
+        }
+    } else if (touchY < tft.height() / 2) {
+        finishCurrentSector();
+        startNewSector();
+        calib.beginSector();
+        drawCalibrationScreen();
+    } else {
+        optimizeAndSaveCalibration();
     }
-    calibration.load(M, c);
-    Serial.println("loaded calibration data!");
-    Serial.print("Matrix: ");
-    printMatrix3d(M);
-    Serial.print("constant: ");
-    printVector3d(c);
-    
 }
 
 void setup() {
     Serial.begin(115200);
-
+    delay(1000);
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+    Serial.printf("\nBOOT reset_reason=%d %s\n", (int)reset_reason,
+                  resetReasonName(reset_reason));
     initDisplay(0);
     initSensors();
-    delay(50);
-
-    tft.fillScreen(TFT_BLACK);
-
     setupSDCard();
-
-    magPoint.setZero();
-    accPoint.setZero();
-
-    tft.fillScreen(TFT_YELLOW);
-    tft.setTextColor(TFT_BLACK, TFT_YELLOW);
-}
-
-void startNewSector() {
-    String filename = sdCard.createFile("sector", foldername);
-    
-    if (filename.isEmpty()) {
-        Serial.println("Failed to create file!");
-        return;
-    }
-    
-    Serial.println("Writing data to: " + filename);
-
+    initRotation(0.0f, -0.6f, 0.3f);
+    drawRendererScreen();
 }
 
 void loop() {
     updateSensors();
-    // printSensorsToSerial(false);
     updateTouch();
+    const unsigned long nowUs = micros();
+    const float dt = lastSampleUs == 0 ? 0.0f : (nowUs - lastSampleUs) * 1.0e-6f;
+    lastSampleUs = nowUs;
 
-    if(calib.am_in_sector() && !calib.is_sector_full()) {
-        calib.add_sample(magPoint, accPoint);
+    if (screenMode == ScreenMode::Calibration &&
+        calib.isCollectingSectorSamples() &&
+        !calib.isSectorComplete()) {
+        calib.recordSample(magPoint.cast<float>(), accPoint.cast<float>(),
+                   gyroPoint.cast<float>(), dt);
+        drawCalibrationScreen();
+    } else if (screenMode == ScreenMode::Renderer && touchActive &&
+               lastTouchActive && lastTouchX >= 0 && lastTouchY >= 0) {
+        updateRotationFromTouch(touchX - lastTouchX, touchY - lastTouchY);
+        drawRendererScreen();
     }
 
-    if ((touchActive && !lastTouchActive && !calib.am_in_sector())) {
-        tft.fillScreen(TFT_GREEN);
-        tft.setTextColor(TFT_BLACK, TFT_GREEN);
-        startNewSector();
-        calib.start_new_sector();
-    }
-
-    else if(calib.is_sector_full() || (touchActive && !lastTouchActive && calib.am_in_sector())) {
-        tft.fillScreen(TFT_ORANGE);
-        calib.writeSectorToFile(sdCard);
-        calib.end_sector();
-        tft.fillScreen(TFT_YELLOW);
-        tft.setTextColor(TFT_BLACK, TFT_YELLOW);
-    }
-
-    int sectorSize = calib.sector_current_size();
-    tft.setFont(&fonts::FreeSans18pt7b); tft.setTextSize(1);
-    tft.setCursor(20, 70);
-    tft.printf("Samples: %d      ", sectorSize);
-
+    handleTouch();
     lastTouchActive = touchActive;
+    lastTouchX = touchActive ? touchX : -1;
+    lastTouchY = touchActive ? touchY : -1;
     delay(40);
 }

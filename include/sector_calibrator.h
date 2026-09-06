@@ -49,6 +49,9 @@ public:
 
   struct Sample {
     Vec3 mag;
+    Vec3 acc;
+    Vec3 gyro;
+    Scalar dt;
     Vec3 acc_unit;
   };
 
@@ -98,7 +101,9 @@ public:
     G_dot_.setZero();
     ellipsoid_N_.setZero();
     current_.clear();
+    current_.reserve(opt_.max_sector_samples);
     sectors_.clear();
+    sectors_.reserve(32);
     sample_count_ = 0;
     norm_count_ = 0;
     in_sector_ = false;
@@ -109,13 +114,19 @@ public:
     c_current_ = 0;
   }
 
-  void start_new_sector() {
+  void beginSector() {
     current_.clear();
+    current_.reserve(opt_.max_sector_samples);
     in_sector_ = true;
   }
 
   // acc is normalized internally.
-  bool add_sample(const Vec3& mag, const Vec3& acc) {
+  bool recordSample(const Vec3& mag, const Vec3& acc) {
+    return recordSample(mag, acc, Vec3::Zero(), Scalar(0));
+  }
+
+  bool recordSample(const Vec3& mag, const Vec3& acc,
+                    const Vec3& gyro, Scalar dt) {
     Scalar an = acc.norm();
     if ((an < opt_.min_acc_norm) || (an > opt_.max_acc_norm) || !isFinite(mag) || !isFinite(acc)) return false;
 
@@ -146,29 +157,31 @@ public:
 
     if (!in_sector_) return true;
 
-    // Active-sector scratch. This is discarded at end_sector().
-    if ((int)current_.size() < opt_.max_sector_samples) current_.push_back(Sample{mag, ahat});
+    // Active-sector scratch. This is discarded when the sector is finished.
+    if ((int)current_.size() < opt_.max_sector_samples) {
+      current_.push_back(Sample{mag, acc, gyro, dt, ahat});
+    }
     ++sample_count_;
     return true;
   }
 
-  bool is_sector_full() {
+  bool isSectorComplete() const {
     if (!in_sector_) return false;
     return (int)current_.size() == opt_.max_sector_samples;
   }
 
-  bool am_in_sector() {
+  bool isCollectingSectorSamples() const {
     return in_sector_;
   }
 
-  int sector_current_size() {
+  int currentSectorSampleCount() const {
     if (!in_sector_) return 0;
     return (int) current_.size();
 
   }
 
   // Fits sector axis/theta from active-sector accel data, then updates the global pitch quadratic.
-  bool end_sector() {
+  bool finishSector() {
     in_sector_ = false;
     const int K = (int)current_.size();
     if (K < 50) {
@@ -229,7 +242,7 @@ public:
       theta_max = std::max(theta_max, theta);
 
       Mat3 U = rodrigues(n, -theta);
-      Mat3x12 B = U * mbarMatrix(s.mag);
+      Mat3x12 B = U * magnetometerDesignMatrix(s.mag);
       S_B += B;
       S_BB += B.transpose() * B;
       ++used;
@@ -258,10 +271,9 @@ public:
   const Vec10& norm_linear() const { return h_norm_; }
   const Mat13& dot_quadratic() const { return G_dot_; }
   const std::vector<SectorInfo>& sectors() const { return sectors_; }
-  int total_sample_count() const { return sample_count_; }
-  int active_sector_sample_count() const { return (int)current_.size(); }
+  int totalAcceptedSampleCount() const { return sample_count_; }
 
-  Mat34 initialWMinMax() const {
+  Mat34 initialTransformFromBounds() const {
     Mat34 W = Mat34::Zero();
     if (!have_minmax_) {
       W.template block<3,3>(0,0).setIdentity();
@@ -278,10 +290,10 @@ public:
     return W;
   }
 
-  Mat34 initialWEllipsoid() const {
-    if (norm_count_ < 20) return initialWMinMax();
+  Mat34 initialTransformFromEllipsoid() const {
+    if (norm_count_ < 20) return initialTransformFromBounds();
     Eigen::SelfAdjointEigenSolver<Mat10> es(ellipsoid_N_);
-    if (es.info() != Eigen::Success) return initialWMinMax();
+    if (es.info() != Eigen::Success) return initialTransformFromBounds();
     Vec10 beta = es.eigenvectors().col(0);
 
     for (int sgn_i = 0; sgn_i < 2; ++sgn_i) {
@@ -309,26 +321,27 @@ public:
       W.col(3) = -A * center;
       return W;
     }
-    return initialWMinMax();
+    return initialTransformFromBounds();
   }
 
   Result solve(const SolveOptions& so = SolveOptions(), bool use_ellipsoid_init = true) {
     Result out;
     if (!initialized_) {
-      W_current_ = use_ellipsoid_init ? initialWEllipsoid() : initialWMinMax();
+      W_current_ = use_ellipsoid_init ? initialTransformFromEllipsoid()
+                  : initialTransformFromBounds();
       W_prior_ = W_current_;
       c_current_ = initialDot(W_current_);
       initialized_ = true;
     }
 
-    Vec13 x = pack(W_current_, c_current_);
+    Vec13 x = packTransform(W_current_, c_current_);
     Scalar lambda = so.lm_lambda0;
     Scalar prev_cost = cost(x, so);
 
     for (int iter = 0; iter < so.max_iters; ++iter) {
       Mat13 H = Mat13::Zero();
       Vec13 g = Vec13::Zero();
-      accumulateGN(x, so, H, g);
+      accumulateGaussNewton(x, so, H, g);
 
       Mat13 H_lm = H;
       for (int i = 0; i < 13; ++i) H_lm(i,i) += lambda * (std::abs(H(i,i)) + Scalar(1e-6));
@@ -356,7 +369,7 @@ public:
       }
     }
 
-    unpack(x, W_current_, c_current_);
+    unpackTransform(x, W_current_, c_current_);
     out.W = W_current_;
     out.A = W_current_.template block<3,3>(0,0);
     out.t = W_current_.col(3);
@@ -366,38 +379,38 @@ public:
     return out;
   }
 
-  Scalar diagnosticNorm2Mean(const Mat34& W) const {
+  Scalar diagnosticNormSquaredMean(const Mat34& W) const {
     if (norm_count_ <= 0) return 0;
-    Vec10 q = qFromW(W);
+    Vec10 q = qFromTransform(W);
     return (h_norm_.dot(q)) / Scalar(norm_count_);
   }
 
-  Scalar diagnosticNorm2Std(const Mat34& W) const {
+  Scalar diagnosticNormSquaredStddev(const Mat34& W) const {
     if (norm_count_ <= 0) return 0;
-    Vec10 q = qFromW(W);
+    Vec10 q = qFromTransform(W);
     Scalar sum = h_norm_.dot(q);
     Scalar sum2 = (q.transpose() * G_norm_ * q)(0);
     Scalar mean = sum / Scalar(norm_count_);
     return std::sqrt(std::max(sum2 / Scalar(norm_count_) - mean*mean, Scalar(0)));
   }
 
-  Scalar diagnosticNorm2RmsResidual(const Mat34& W) const {
+  Scalar diagnosticNormSquaredRmsResidual(const Mat34& W) const {
     if (norm_count_ <= 0) return 0;
-    Vec10 q = qFromW(W);
+    Vec10 q = qFromTransform(W);
     Scalar ss = (q.transpose() * G_norm_ * q)(0) - Scalar(2) * h_norm_.dot(q) + Scalar(norm_count_);
     return std::sqrt(std::max(ss / Scalar(norm_count_), Scalar(0)));
   }
 
   Scalar diagnosticDotMean(const Mat34& W) const {
     if (norm_count_ <= 0) return 0;
-    Vec12 w = vecW(W);
+    Vec12 w = vectorizeTransform(W);
     Vec12 sd = -G_dot_.template block<12,1>(0,12);
     return sd.dot(w) / Scalar(norm_count_);
   }
 
-  Scalar diagnosticDotStd(const Mat34& W) const {
+  Scalar diagnosticDotStddev(const Mat34& W) const {
     if (norm_count_ <= 0) return 0;
-    Vec12 w = vecW(W);
+    Vec12 w = vectorizeTransform(W);
     Vec12 sd = -G_dot_.template block<12,1>(0,12);
     Scalar sum = sd.dot(w);
     Scalar sum2 = (w.transpose() * G_dot_.template block<12,12>(0,0) * w)(0);
@@ -407,20 +420,51 @@ public:
 
   Scalar diagnosticDotRmsResidual(const Mat34& W, Scalar c) const {
     if (norm_count_ <= 0) return 0;
-    Vec13 x = pack(W, c);
+    Vec13 x = packTransform(W, c);
     Scalar ss = (x.transpose() * G_dot_ * x)(0);
     return std::sqrt(std::max(ss / Scalar(norm_count_), Scalar(0)));
   }
 
-  bool writeSectorToFile(SDCard& sdCard) const {
-    if(!sdCard.isAvailable()) return false;
-    
-    for(const auto &s : current_) {
-      sdCard.appendLinef("%.3f,%.3f,%.3f,%.3f,%.3f,%.3f", 
-            s.mag[0], s.mag[1], s.mag[2],
-            s.acc_unit[0], s.acc_unit[1], s.acc_unit[2]);
+  bool writeSectorSamplesToFile(SDCard& sdCard) const {
+    if (!sdCard.isAvailable()) return false;
+
+#if defined(ARDUINO)
+    File file = SD.open(sdCard.getCurrentFilename(), FILE_APPEND);
+    if (!file) {
+      Serial.println("ERROR: Failed to open sector file for append");
+      return false;
     }
+
+    char buffer[128];
+    size_t written_samples = 0;
+    for (const auto& s : current_) {
+      int length = snprintf(
+        buffer,
+        sizeof(buffer),
+        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f\n",
+        s.mag[0], s.mag[1], s.mag[2],
+        s.acc[0], s.acc[1], s.acc[2],
+        s.gyro[0], s.gyro[1], s.gyro[2], s.dt
+      );
+
+      if (length <= 0 || length >= (int)sizeof(buffer) ||
+          file.write((const uint8_t*)buffer, length) != (size_t)length) {
+        file.close();
+        Serial.println("ERROR: Failed to write sector sample");
+        return false;
+      }
+
+      ++written_samples;
+      if ((written_samples & 31) == 0) yield();
+    }
+
+    file.flush();
+    file.close();
     return true;
+#else
+    return false;
+#endif
   }
 
 private:
@@ -471,7 +515,7 @@ private:
     return I * std::cos(angle) + K * std::sin(angle) + (n * n.transpose()) * (Scalar(1) - std::cos(angle));
   }
 
-  static Mat3x12 mbarMatrix(const Vec3& m) {
+  static Mat3x12 magnetometerDesignMatrix(const Vec3& m) {
     Mat3x12 M = Mat3x12::Zero();
     M.template block<3,3>(0,0) = m(0) * Mat3::Identity();
     M.template block<3,3>(0,3) = m(1) * Mat3::Identity();
@@ -506,7 +550,7 @@ private:
     return d;
   }
 
-  static Vec12 vecW(const Mat34& W) {
+  static Vec12 vectorizeTransform(const Mat34& W) {
     Vec12 w;
     int k = 0;
     for (int c = 0; c < 4; ++c)
@@ -515,7 +559,7 @@ private:
     return w;
   }
 
-  static Mat34 matW(const Vec12& w) {
+  static Mat34 transformFromVector(const Vec12& w) {
     Mat34 W;
     int k = 0;
     for (int c = 0; c < 4; ++c)
@@ -524,19 +568,19 @@ private:
     return W;
   }
 
-  static Vec13 pack(const Mat34& W, Scalar c) {
+  static Vec13 packTransform(const Mat34& W, Scalar c) {
     Vec13 x;
-    x.template head<12>() = vecW(W);
+    x.template head<12>() = vectorizeTransform(W);
     x(12) = c;
     return x;
   }
 
-  static void unpack(const Vec13& x, Mat34& W, Scalar& c) {
-    W = matW(x.template head<12>());
+  static void unpackTransform(const Vec13& x, Mat34& W, Scalar& c) {
+    W = transformFromVector(x.template head<12>());
     c = x(12);
   }
 
-  static Vec10 qFromW(const Mat34& W) {
+  static Vec10 qFromTransform(const Mat34& W) {
     Eigen::Matrix<Scalar,4,4> Q = W.transpose() * W;
     Vec10 q;
     q << Q(0,0), Q(1,1), Q(2,2), Q(3,3),
@@ -544,7 +588,7 @@ private:
     return q;
   }
 
-  static Mat10x12 JqFromW(const Mat34& W) {
+  static Mat10x12 jacobianQFromTransform(const Mat34& W) {
     Mat10x12 J = Mat10x12::Zero();
     Vec3 c0 = W.col(0), c1 = W.col(1), c2 = W.col(2), c3 = W.col(3);
     J.template block<1,3>(0,0) = (Scalar(2)*c0).transpose();
@@ -576,24 +620,24 @@ private:
     Vec12 w = x.template head<12>();
     Scalar C = Scalar(0.5) * so.pitch_weight * (w.transpose() * G_pitch_ * w)(0);
 
-    Mat34 W = matW(w);
-    Vec10 q = qFromW(W);
+    Mat34 W = transformFromVector(w);
+    Vec10 q = qFromTransform(W);
     Scalar norm_ss = (q.transpose() * G_norm_ * q)(0) - Scalar(2) * h_norm_.dot(q) + Scalar(norm_count_);
     C += Scalar(0.5) * so.norm_weight * norm_ss;
 
     C += Scalar(0.5) * so.dot_weight * (x.transpose() * G_dot_ * x)(0);
 
     if (so.prior_weight > Scalar(0)) {
-      Vec12 wp = vecW(W_prior_);
+      Vec12 wp = vectorizeTransform(W_prior_);
       Vec12 d = w - wp;
       C += Scalar(0.5) * so.prior_weight * d.squaredNorm();
     }
     return C;
   }
 
-  void accumulateGN(const Vec13& x, const SolveOptions& so, Mat13& H, Vec13& g) const {
+  void accumulateGaussNewton(const Vec13& x, const SolveOptions& so, Mat13& H, Vec13& g) const {
     Vec12 w = x.template head<12>();
-    Mat34 W = matW(w);
+    Mat34 W = transformFromVector(w);
 
     // Exact pitch quadratic: 0.5*w^T G*w.
     H.template block<12,12>(0,0) += so.pitch_weight * G_pitch_;
@@ -605,14 +649,14 @@ private:
 
     // Norm residual is linear in q=vech(W^T W), then q is quadratic in W.
     // GN Hessian uses J_q^T G_q J_q; gradient is exact first derivative J_q^T(G_q q - h_q).
-    Vec10 q = qFromW(W);
-    Mat10x12 Jq = JqFromW(W);
+    Vec10 q = qFromTransform(W);
+    Mat10x12 Jq = jacobianQFromTransform(W);
     Vec10 sq = G_norm_ * q - h_norm_;
     H.template block<12,12>(0,0) += so.norm_weight * (Jq.transpose() * G_norm_ * Jq);
     g.template head<12>() += so.norm_weight * (Jq.transpose() * sq);
 
     if (so.prior_weight > Scalar(0)) {
-      Vec12 wp = vecW(W_prior_);
+      Vec12 wp = vectorizeTransform(W_prior_);
       H.template block<12,12>(0,0) += so.prior_weight * Mat12::Identity();
       g.template head<12>() += so.prior_weight * (w - wp);
     }

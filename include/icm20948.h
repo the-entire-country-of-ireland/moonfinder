@@ -24,6 +24,7 @@ extern Eigen::Vector3d gyroPoint;
 extern Eigen::Vector3d magPointTrans;
 extern Eigen::Vector3d accPointTrans;
 extern Eigen::Vector3d gyroPointTrans;
+extern bool icmReady;
 
 extern AffineFinder calibration;
 
