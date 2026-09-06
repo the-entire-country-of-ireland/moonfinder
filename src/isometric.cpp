@@ -193,7 +193,7 @@ void drawRotation() {
     matrixToEuler(currentRotation, rx, ry, rz);
     Eigen::Vector3d vec(rx, ry, rz);
 
-    printVectorToDisplay("Rot: ", vec, 300);
+    printVectorToDisplay("Rot: ", vec, 295);
 }
 
 void drawScene() {

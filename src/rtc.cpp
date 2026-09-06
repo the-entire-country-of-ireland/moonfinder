@@ -1,8 +1,6 @@
 #include "rtc.h"
+#include "i2c_config.h"
 #include <sys/time.h>
-
-#define SDA 22
-#define SCL 27
 
 RTC::RTC()
   : _initialized(false),
@@ -11,7 +9,7 @@ RTC::RTC()
     _hasValidRtcTime(false) {
 }
 
-bool RTC::init(uint8_t sda_pin=SDA, uint8_t scl_pin=SCL) {
+bool RTC::init(uint8_t sda_pin=MoonlightI2cSda, uint8_t scl_pin=MoonlightI2cScl) {
   Serial.println("\n=== RTC Initialization ===");
   
   // Initialize I2C

@@ -35,6 +35,6 @@ void scanI2C();
 void initSensors();
 void updateSensors();
 void printSensorsToSerial(bool transformed = true);
-void printSensorsToDisplay(bool transformed = true);
+void printSensorsToDisplay(bool transformed = true, int heightOffset = 0);
 Eigen::Vector3d getAccelReading();
 Eigen::Vector3d getMagReading();

@@ -4,6 +4,7 @@
 #include "imu_backend.h"
 #include "icm_backend.h"
 #include "lms_backend.h"
+#include "i2c_config.h"
 
 Eigen::Vector3d magPoint = Eigen::Vector3d::Zero();
 Eigen::Vector3d accPoint = Eigen::Vector3d::Zero();
@@ -16,10 +17,12 @@ bool sensorReady = false;
 double target = -0.907;
 AffineFinder calibration(target);
 
-#if defined(MOONFINDER_SENSOR_BACKEND_LMS)
+#if defined(MOONFINDER_SENSOR_BACKEND_LMS) && MOONFINDER_SENSOR_BACKEND_LMS
 Lsm303Lis2mdlBackend sensorBackend;
-#else
+#elif defined(MOONFINDER_SENSOR_BACKEND_ICM) && MOONFINDER_SENSOR_BACKEND_ICM
 Icm20948Backend sensorBackend;
+#else
+#error "No sensor backend defined. Please define either MOONFINDER_SENSOR_BACKEND_LMS or MOONFINDER_SENSOR_BACKEND_ICM in platformio.ini."
 #endif
 
 void scanI2C() {
@@ -36,14 +39,17 @@ void scanI2C() {
 }
 
 void initSensors() {
-    Wire.begin(SDA, SCL);
+    Wire.begin(MoonlightI2cSda, MoonlightI2cScl);
     Serial.begin(115200);
+    Serial.printf("I2C pins: SDA=%u SCL=%u\n", MoonlightI2cSda, MoonlightI2cScl);
     scanI2C();
     sensorReady = sensorBackend.begin();
-#if defined(MOONFINDER_SENSOR_BACKEND_LMS)
+#if defined(MOONFINDER_SENSOR_BACKEND_LMS) && MOONFINDER_SENSOR_BACKEND_LMS
     Serial.println("Sensor backend: LSM303 accelerometer + LIS2MDL magnetometer");
-#else
+#elif defined(MOONFINDER_SENSOR_BACKEND_ICM) && MOONFINDER_SENSOR_BACKEND_ICM
     Serial.println("Sensor backend: ICM-20948");
+#else
+    Serial.println("Sensor backend: Unknown");
 #endif
 }
 
@@ -66,13 +72,13 @@ void printSensorsToSerial(bool transformed) {
     printEigen(transformed ? magPointTrans : magPoint);
 }
 
-void printSensorsToDisplay(bool transformed) {
+void printSensorsToDisplay(bool transformed, int heightOffset) {
     tft.setTextWrap(false);
     Eigen::Vector3d acc = transformed ? accPointTrans : accPoint;
     Eigen::Vector3d mag = transformed ? magPointTrans : magPoint;
-    printVectorToDisplay("Acc: ", acc, 5);
-    printVectorToDisplay("Mag: ", mag, 25);
-    printVectorToDisplay("Gyro: ", transformed ? gyroPointTrans : gyroPoint, 45);
+    printVectorToDisplay(transformed ? "AccN: " : "Acc: ", acc, 5 + heightOffset);
+    printVectorToDisplay(transformed ? "MagC: " : "Mag: ", mag, 25 + heightOffset);
+    printVectorToDisplay("Gyro: ", transformed ? gyroPointTrans : gyroPoint, 45 + heightOffset);
 }
 
 Eigen::Vector3d getAccelReading() { return accPointTrans; }
