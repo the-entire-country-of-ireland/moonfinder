@@ -5,13 +5,10 @@
 #include <string>
 #include <iomanip>
 #include <cmath>
-#include <esp_system.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
 #include "display.h"
 #include "isometric.h"
-#include "icm20948.h"
+#include "imu_backend.h"
 #include "sd_card.h"
 #include "online_calibration.h"
 #include "AHRS.h"
@@ -31,34 +28,6 @@ int lastTouchX = -1;
 int lastTouchY = -1;
 bool lastTouchActive = false;
 unsigned long lastSampleUs = 0;
-
-const char* resetReasonName(esp_reset_reason_t reason) {
-    switch (reason) {
-        case ESP_RST_POWERON: return "POWERON";
-        case ESP_RST_EXT: return "EXT_RESET";
-        case ESP_RST_SW: return "SOFTWARE_RESET";
-        case ESP_RST_PANIC: return "PANIC_EXCEPTION";
-        case ESP_RST_INT_WDT: return "INTERRUPT_WATCHDOG";
-        case ESP_RST_TASK_WDT: return "TASK_WATCHDOG";
-        case ESP_RST_WDT: return "OTHER_WATCHDOG";
-        case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
-        case ESP_RST_BROWNOUT: return "BROWNOUT";
-        case ESP_RST_SDIO: return "SDIO";
-        default: return "UNKNOWN";
-    }
-}
-
-void dumpRuntime(const char* where) {
-    Serial.printf(
-        "[%s] t=%lu heap=%u min_heap=%u stack_hwm=%u sector=%d\n",
-        where,
-        millis(),
-        ESP.getFreeHeap(),
-        ESP.getMinFreeHeap(),
-        uxTaskGetStackHighWaterMark(NULL),
-        calib.currentSectorSampleCount()
-    );
-}
 
 void setupSDCard() {
     if (!sdCard.init()) {
@@ -137,12 +106,13 @@ void drawCalibrationScreen() {
 
 bool finishCurrentSector() {
     if (!calib.isCollectingSectorSamples()) return false;
-    dumpRuntime("sector finalize begin");
+    dumpRuntime("sector finalize begin", calib.currentSectorSampleCount(), collectedSectors);
     tft.fillScreen(TFT_ORANGE);
     bool wrote = calib.writeSectorSamplesToFile(sdCard);
     bool ended = calib.finishSector();
     if (ended) ++collectedSectors;
-    dumpRuntime(wrote && ended ? "sector finalize ok" : "sector finalize failed");
+    dumpRuntime(wrote && ended ? "sector finalize ok" : "sector finalize failed",
+                calib.currentSectorSampleCount(), collectedSectors);
     return wrote && ended;
 }
 
