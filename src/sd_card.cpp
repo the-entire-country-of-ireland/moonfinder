@@ -61,6 +61,50 @@ bool SDCard::init() {
   return true;
 }
 
+String SDCard::createFolder(const String& prefix, const String& folder) {
+  if (!_initialized) {
+    Serial.println("ERROR: SD card not initialized!");
+    return "";
+  }
+  
+  // Create folder if it doesn't exist
+  if (!SD.exists(folder)) {
+    if (SD.mkdir(folder)) {
+      Serial.println("Created parent folder: " + folder);
+    } else {
+      Serial.println("ERROR: Failed to create parent folder: " + folder);
+      return "";
+    }
+  }
+  
+  // Find next available filename
+  int counter = 0;
+  String filename;
+  
+  while (counter < 10000) {  // Safety limit
+    filename = folder + "/" + prefix + "_" + String(counter);
+    if (!SD.exists(filename)) {
+      break;
+    }
+    counter++;
+  }
+  
+  if (counter >= 10000) {
+    Serial.println("ERROR: Too many folders with this prefix!");
+    return "";
+  }
+  
+  // Create the folder
+  if (!SD.mkdir(filename)) {
+    Serial.println("ERROR: Failed to create folder: " + filename);
+    return "";
+  }
+  
+  Serial.println("Created folder: " + filename);
+  
+  return filename;
+}
+
 String SDCard::createFile(const String& prefix, const String& folder) {
   if (!_initialized) {
     Serial.println("ERROR: SD card not initialized!");
@@ -70,9 +114,9 @@ String SDCard::createFile(const String& prefix, const String& folder) {
   // Create folder if it doesn't exist
   if (!SD.exists(folder)) {
     if (SD.mkdir(folder)) {
-      Serial.println("Created folder: " + folder);
+      Serial.println("Created parent folder: " + folder);
     } else {
-      Serial.println("ERROR: Failed to create folder: " + folder);
+      Serial.println("ERROR: Failed to create parent folder: " + folder);
       return "";
     }
   }
@@ -109,6 +153,7 @@ String SDCard::createFile(const String& prefix, const String& folder) {
 }
 
 bool SDCard::appendLine(const String& data) {
+  
   if (!_initialized) {
     Serial.println("ERROR: SD card not initialized!");
     return false;

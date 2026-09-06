@@ -26,6 +26,7 @@ public:
   // Create new file with prefix and auto-increment counter
   // Returns the filename created, or empty string on failure
   String createFile(const String& prefix, const String& folder = "/data");
+  String createFolder(const String& prefix, const String& folder = "/data");
   
   
   // Append line to current file

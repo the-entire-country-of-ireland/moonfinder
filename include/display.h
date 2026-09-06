@@ -29,11 +29,11 @@ void printVectorToDisplay(const char * str, const Eigen::Vector3d vec, int heigh
 template <typename Derived>
 void printEigen(const Eigen::MatrixBase<Derived>& m, uint8_t digits = 2)
 {
-    for (int i = 0; i < m.rows(); ++i) {
-        for (int j = 0; j < m.cols(); ++j) {
-            Serial.print(m(i, j), digits);
-            if (j < m.cols() - 1) {
-                Serial.print('\t');
+    for (int i = 0; i < m.cols(); ++i) {
+        for (int j = 0; j < m.rows(); ++j) {
+            Serial.print(m(j, i), digits);
+            if (j < m.rows() - 1) {
+                Serial.print("\t");
             }
         }
         Serial.println();

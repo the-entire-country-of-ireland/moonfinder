@@ -246,8 +246,8 @@ class StreamingExactCalibration:
         # x^T Q x = phi^T q
         phi = quadratic_features(x)
 
-        self.Ha += weight * np.outer(z, z) / scale**2
-        self.ga += weight * self.T * z 
+        self.Ha += weight * np.outer(z, z)
+        self.ga += weight * self.T * z * scale
 
         self.Hn += weight * np.outer(phi, phi)
         self.gn += weight * phi
