@@ -22,6 +22,8 @@ public:
   
   // Get current date/time as DateTime object
   DateTime now();
+  DateTime currentTime();
+  bool syncSystemClock();
   
   // Get formatted date/time string (YYYY-MM-DD HH:MM:SS)
   String getDateTimeString();
@@ -34,6 +36,11 @@ public:
   
   // Check if initialized
   bool isInitialized() const { return _initialized; }
+
+private:
+  uint32_t _fallbackEpoch;
+  uint32_t _fallbackStartMillis;
+  bool _hasValidRtcTime;
 };
 
 #endif

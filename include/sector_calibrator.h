@@ -426,46 +426,58 @@ public:
   }
 
   bool writeSectorSamplesToFile(SDCard& sdCard) const {
-    if (!sdCard.isAvailable()) return false;
+  if (!sdCard.isAvailable()) return false;
 
-#if defined(ARDUINO)
-    File file = SD.open(sdCard.getCurrentFilename(), FILE_APPEND);
-    if (!file) {
-      Serial.println("ERROR: Failed to open sector file for append");
+  File file = SD.open(sdCard.getCurrentFilename(), FILE_APPEND);
+  if (!file) {
+    Serial.println("ERROR: Failed to open sector file for append");
+    return false;
+  }
+
+  char buffer[160];
+  size_t written_samples = 0;
+
+  for (const auto& s : current_) {
+    int length = snprintf(
+      buffer,
+      sizeof(buffer),
+      "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+      (double)s.mag[0],  (double)s.mag[1],  (double)s.mag[2],
+      (double)s.acc[0],  (double)s.acc[1],  (double)s.acc[2],
+      (double)s.gyro[0], (double)s.gyro[1], (double)s.gyro[2],
+      (double)s.dt
+    );
+
+    if (length <= 0 || length >= (int)sizeof(buffer)) {
+      file.close();
+      Serial.println("ERROR: Failed to format sector sample");
       return false;
     }
 
-    char buffer[128];
-    size_t written_samples = 0;
-    for (const auto& s : current_) {
-      int length = snprintf(
-        buffer,
-        sizeof(buffer),
-        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f\n",
-        s.mag[0], s.mag[1], s.mag[2],
-        s.acc[0], s.acc[1], s.acc[2],
-        s.gyro[0], s.gyro[1], s.gyro[2], s.dt
-      );
-
-      if (length <= 0 || length >= (int)sizeof(buffer) ||
-          file.write((const uint8_t*)buffer, length) != (size_t)length) {
-        file.close();
-        Serial.println("ERROR: Failed to write sector sample");
-        return false;
-      }
-
-      ++written_samples;
-      if ((written_samples & 31) == 0) yield();
+    size_t wrote = file.write((const uint8_t*)buffer, (size_t)length);
+    if (wrote != (size_t)length) {
+      file.close();
+      Serial.println("ERROR: Failed to write sector sample");
+      return false;
     }
 
-    file.flush();
-    file.close();
-    return true;
-#else
-    return false;
-#endif
+    ++written_samples;
+
+    // Avoid starving the scheduler/watchdog during a full-sector write.
+    if ((written_samples & 31) == 0) {
+      yield();
+    }
   }
+
+  file.flush();
+  file.close();
+
+  Serial.printf("Wrote %u sector samples to %s\n",
+                (unsigned)written_samples,
+                sdCard.getCurrentFilename().c_str());
+
+  return true;
+}
 
 private:
   Options opt_;

@@ -1,5 +1,6 @@
 #pragma once
 #include <ArduinoEigen.h>
+#include <RTClib.h>
 
 using namespace Eigen;
 
@@ -25,6 +26,28 @@ struct Orientation {
     Vector3d y_enu;   // Device y-axis expressed in ENU
     Vector3d z_enu;   // Device z-axis expressed in ENU
 };
+
+struct NeuOrientation {
+    Matrix3d device_to_neu;
+    Vector3d x_neu;
+    Vector3d y_neu;
+    Vector3d z_neu;
+    bool valid;
+};
+
+struct MoonPosition {
+    Vector3d enu;
+    double azimuth_deg;
+    double elevation_deg;
+    double distance_km;
+    bool valid;
+};
+
+NeuOrientation computeNeuOrientation(
+    const Vector3d& acceleration,
+    const Vector3d& calibrated_magnetometer);
+
+MoonPosition computeMoonEnu(const DateTime& utc);
 
 /**
  * @brief Computes device orientation in ENU frame using Davenport's Q-Method

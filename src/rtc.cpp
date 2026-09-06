@@ -1,9 +1,14 @@
 #include "rtc.h"
+#include <sys/time.h>
 
 #define SDA 22
 #define SCL 27
 
-RTC::RTC() : _initialized(false) {
+RTC::RTC()
+  : _initialized(false),
+    _fallbackEpoch(DateTime(F(__DATE__), F(__TIME__)).unixtime()),
+    _fallbackStartMillis(0),
+    _hasValidRtcTime(false) {
 }
 
 bool RTC::init(uint8_t sda_pin=SDA, uint8_t scl_pin=SCL) {
@@ -24,16 +29,18 @@ bool RTC::init(uint8_t sda_pin=SDA, uint8_t scl_pin=SCL) {
   // Check if RTC lost power
   if (!_rtc.initialized() || _rtc.lostPower()) {
     Serial.println("WARNING: RTC lost power!");
-    Serial.println("Call setToCompileTime() to set the time.");
+    Serial.println("Using compile time plus uptime.");
   } else {
     Serial.println("RTC is running with valid time");
     Serial.print("Current time: ");
     Serial.println(getDateTimeString());
+    _hasValidRtcTime = true;
   }
   
   Serial.println("=== RTC Ready ===\n");
   
   _initialized = true;
+  _fallbackStartMillis = millis();
   return true;
 }
 
@@ -49,6 +56,9 @@ bool RTC::setToCompileTime(int32_t offset_seconds) {
   DateTime adjustedTime = DateTime(compileTime.unixtime() + offset_seconds);
   
   _rtc.adjust(adjustedTime);
+  _fallbackEpoch = adjustedTime.unixtime();
+  _fallbackStartMillis = millis();
+  _hasValidRtcTime = true;
   
   Serial.print("RTC set to: ");
   Serial.println(getDateTimeString());
@@ -59,18 +69,28 @@ bool RTC::setToCompileTime(int32_t offset_seconds) {
 DateTime RTC::now() {
   if (!_initialized) {
     Serial.println("ERROR: RTC not initialized!");
-    return DateTime((uint32_t) 0);  // Return epoch time
+    return currentTime();
   }
-  
-  return _rtc.now();
+
+  return currentTime();
+}
+
+DateTime RTC::currentTime() {
+  if (_initialized && _hasValidRtcTime) return _rtc.now();
+  return DateTime(_fallbackEpoch + (millis() - _fallbackStartMillis) / 1000);
+}
+
+bool RTC::syncSystemClock() {
+  DateTime value = currentTime();
+  timeval tv;
+  tv.tv_sec = static_cast<time_t>(value.unixtime());
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
+  return value.unixtime() != 0;
 }
 
 String RTC::getDateTimeString() {
-  if (!_initialized) {
-    return "RTC not initialized";
-  }
-  
-  DateTime dt = _rtc.now();
+  DateTime dt = currentTime();
   
   char buffer[20];
   sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d",
@@ -81,11 +101,7 @@ String RTC::getDateTimeString() {
 }
 
 String RTC::getISO8601() {
-  if (!_initialized) {
-    return "RTC not initialized";
-  }
-  
-  DateTime dt = _rtc.now();
+  DateTime dt = currentTime();
   
   char buffer[20];
   sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02d",
@@ -96,9 +112,5 @@ String RTC::getISO8601() {
 }
 
 uint32_t RTC::getUnixTime() {
-  if (!_initialized) {
-    return 0;
-  }
-  
-  return _rtc.now().unixtime();
+  return currentTime().unixtime();
 }
