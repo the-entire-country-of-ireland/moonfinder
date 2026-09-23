@@ -1,6 +1,7 @@
 #include "AHRS.h"
 #include <wmm.h>    // World Magnetic Model (Bolder Flight)
 #include <SiderealPlanets.h>
+#include <cmath>
 
 // Need the following define for SAMD processors
 #if defined(ARDUINO_SAMD_ZERO) && defined(SERIAL_PORT_USBVIRTUAL)
@@ -126,4 +127,56 @@ NeuOrientation computeNeuOrientation(const Vector3d& acceleration,
 }
 
 MoonPosition computeMoonEnu(const DateTime& utc) {
+    constexpr double Pi = 3.14159265358979323846;
+    MoonPosition result;
+    result.enu = Vector3d::Zero();
+    result.azimuth_deg = NAN;
+    result.elevation_deg = NAN;
+    result.distance_km = NAN;
+    result.valid = false;
+
+    // SiderealPlanets keeps the observer location as object state.  Initialize
+    // that state once, then update only the UTC date/time for each solution.
+    static bool initialized = false;
+    if (!initialized) {
+        if (!myAstro.begin()) return result;
+        if (!myAstro.setTimeZone(0)) return result;
+        myAstro.rejectDST();
+        if (!myAstro.setLatLong(LAT, LON)) return result;
+        if (!myAstro.setElevationM(ALT_M)) return result;
+        initialized = true;
+    }
+
+    if (!myAstro.setGMTdate(utc.year(), utc.month(), utc.day())) return result;
+    if (!myAstro.setGMTtime(utc.hour(), utc.minute(), static_cast<float>(utc.second()))) {
+        return result;
+    }
+
+    // doMoon() produces geocentric lunar RA/Dec and the equatorial horizontal
+    // parallax.  Apply lunar parallax before converting to local horizontal
+    // coordinates so the result is topocentric for the device location.
+    if (!myAstro.doMoon()) return result;
+    if (!myAstro.doLunarParallax()) return result;
+    if (!myAstro.doRAdec2AltAz()) return result;
+
+    const double azimuthDeg = myAstro.getAzimuth();
+    const double elevationDeg = myAstro.getAltitude();
+    if (!std::isfinite(azimuthDeg) || !std::isfinite(elevationDeg)) return result;
+
+    // SiderealPlanets azimuth is clockwise from North.  Convert that directly
+    // to the project's ENU convention: x=East, y=North, z=Up.
+    const double azimuthRad = azimuthDeg * Pi / 180.0;
+    const double elevationRad = elevationDeg * Pi / 180.0;
+    const double cosElevation = std::cos(elevationRad);
+    result.enu = Vector3d(cosElevation * std::sin(azimuthRad),
+                          cosElevation * std::cos(azimuthRad),
+                          std::sin(elevationRad));
+    result.azimuth_deg = azimuthDeg;
+    result.elevation_deg = elevationDeg;
+
+    // SiderealPlanets 1.6.0 does not expose lunar distance through its
+    // documented public API, so distance_km intentionally remains NAN.
+
+    result.valid = result.enu.allFinite();
+    return result;
 }

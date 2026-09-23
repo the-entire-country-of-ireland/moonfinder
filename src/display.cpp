@@ -18,7 +18,7 @@ void initDisplay(int rotation) {
 
   tft.init();
   tft.initDMA();
-  tft.setRotation(2);
+  tft.setRotation(rotation);
   tft.setBrightness(128);  // 0 ~ 255
 
   // Set the color mode as needed (default is 16).
@@ -72,46 +72,36 @@ void printTouchToSerial() {
   }
 }
 
-// Print Touchscreen info about X, Y and Pressure (Z) on the TFT Display
+// Print touchscreen coordinates without exceeding the portrait CYD width.
 void printTouchToDisplay() {
-  tft.setCursor(0, tft.height() / 2);
-  tft.setTextColor(0xFFFFFFU, 0);
-  tft.setTextDatum(textdatum_t::middle_center);
+  tft.setTextWrap(false);
+  tft.setTextDatum(textdatum_t::top_center);
   tft.setTextSize(1);
+  tft.setFont(&fonts::FreeSans12pt7b);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-  tft.setFont(&fonts::FreeSans18pt7b);
-  tft.printf("    X:");
-  tft.setFont(&fonts::Font7); // Font7 looks like 7-segment tft displays.
-  tft.setTextSize(0.75);
-  tft.printf("% 5d\n", touchX);
-  
-  tft.setTextSize(1);
-  tft.setFont(&fonts::FreeSans18pt7b);
-  tft.printf("    Y:");
-  tft.setFont(&fonts::Font7); // Font7 looks like 7-segment tft displays.
-  tft.setTextSize(0.75);
-  tft.printf("% 5d", touchY);
-
-  tft.setTextSize(1);
-
+  char line[32];
+  snprintf(line, sizeof(line), "Touch X: %d", touchX);
+  tft.drawString(line, tft.width() / 2, 120);
+  snprintf(line, sizeof(line), "Touch Y: %d", touchY);
+  tft.drawString(line, tft.width() / 2, 155);
+  tft.setTextDatum(textdatum_t::top_left);
 }
 
 void printStringToDisplay(String str) {
+  tft.setTextWrap(false);
   tft.setFont(&fonts::FreeSans9pt7b);
-  tft.setCursor(0, 5);
-  tft.println(str);
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(4, 5);
+  tft.print(str);
 }
 
 void printVectorToDisplay(const char * str, const Eigen::Vector3d vec, int height) {
+  tft.setTextWrap(false);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setFont(&fonts::FreeSans9pt7b);
+  tft.setFont(&fonts::Font0);
   tft.setTextSize(1);
-  tft.setCursor(5, height);
-  tft.print(str);
-  tft.setFont(&fonts::Font7);
-  tft.setTextSize(0.35);
-  tft.printf("% 2.2f , % 2.2f , % 2.2f        ",
-      vec[0], vec[1], vec[2]);
-  tft.setFont(&fonts::FreeSans9pt7b);
-  tft.setTextSize(1);
+  tft.setCursor(4, height);
+  tft.printf("%s %.2f, %.2f, %.2f", str, vec[0], vec[1], vec[2]);
 }

@@ -182,7 +182,7 @@ void drawAxes(const Matrix3d& R, float scale, int cx, int cy) {
     // Draw labels at the end of each axis
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setFont(&fonts::FreeSans9pt7b);
-    tft.setTextSize(1.5);
+    tft.setTextSize(1);
     tft.drawString("X", static_cast<int16_t>(x.x()), static_cast<int16_t>(x.y()));
     tft.drawString("Y", static_cast<int16_t>(y.x()), static_cast<int16_t>(y.y()));
     tft.drawString("Z", static_cast<int16_t>(z.x()), static_cast<int16_t>(z.y()));

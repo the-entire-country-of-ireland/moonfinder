@@ -6,8 +6,8 @@
 #include "LGFX_ESP32_2432S028R_CYD.hpp"
 #include <ArduinoEigen.h>
 
-#define SCREEN_WIDTH 320
-#define SCREEN_HEIGHT 240
+#define SCREEN_WIDTH 240
+#define SCREEN_HEIGHT 320
 
 extern LGFX tft;
 extern LGFX_Sprite sprite;
@@ -18,7 +18,7 @@ extern int16_t touchX, touchY;
 extern bool touchActive;
 
 
-void initDisplay(int rotation=0);
+void initDisplay(int rotation=2);
 void updateTouch();
 void printTouchToSerial();
 void printTouchToDisplay();
