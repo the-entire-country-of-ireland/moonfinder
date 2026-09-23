@@ -33,7 +33,7 @@ extern AffineFinder calibration;
 
 void scanI2C();
 void initSensors();
-void updateSensors();
+bool updateSensors();
 void printSensorsToSerial(bool transformed = true);
 void printSensorsToDisplay(bool transformed = true, int heightOffset = 0);
 Eigen::Vector3d getAccelReading();

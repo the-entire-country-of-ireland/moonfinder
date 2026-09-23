@@ -2,6 +2,7 @@
 #include <ArduinoEigen.h>
 #include <WiFi.h>
 #include <esp_system.h>
+#include <esp_sntp.h>
 #include <time.h>
 
 #include "AHRS.h"
@@ -27,6 +28,7 @@ constexpr unsigned long WifiConnectTimeoutMs = 15000;
 constexpr unsigned long NtpSyncTimeoutMs = 10000;
 constexpr unsigned long MoonUpdatePeriodMs = 1000;
 constexpr unsigned long UiRefreshPeriodMs = 80;
+constexpr double AttitudeEmaAlpha = 0.12;
 
 SDCard sdCard;
 String foldername;
@@ -52,6 +54,42 @@ RTC rtcClock;
 NeuOrientation currentNeuOrientation;
 MoonPosition currentMoonPosition;
 
+Eigen::Vector3d accPointEma = Eigen::Vector3d::Zero();
+Eigen::Vector3d magPointTransEma = Eigen::Vector3d::Zero();
+bool attitudeEmaInitialized = false;
+volatile bool ntpTimeAdjusted = false;
+
+void onNtpTimeAdjusted(struct timeval*) {
+    ntpTimeAdjusted = true;
+}
+
+void resetAttitudeEma() {
+    accPointEma.setZero();
+    magPointTransEma.setZero();
+    attitudeEmaInitialized = false;
+}
+
+void updateAttitudeEma() {
+    // Smooth the quantities used by attitude estimation only.  The
+    // accelerometer is filtered before normalization; the magnetometer is
+    // filtered after affine calibration.  Raw/calibration and 3-D data remain
+    // completely untouched.
+    if (!accPoint.allFinite() || !magPointTrans.allFinite() ||
+        accPoint.norm() < 1e-9 || magPointTrans.norm() < 1e-9) {
+        return;
+    }
+
+    if (!attitudeEmaInitialized) {
+        accPointEma = accPoint;
+        magPointTransEma = magPointTrans;
+        attitudeEmaInitialized = true;
+        return;
+    }
+
+    accPointEma += AttitudeEmaAlpha * (accPoint - accPointEma);
+    magPointTransEma += AttitudeEmaAlpha * (magPointTrans - magPointTransEma);
+}
+
 bool syncTimeFromWiFi() {
     if (WifiSsid[0] == '\0') {
         Serial.println("WiFi time sync skipped; configure WifiSsid and WifiPassword.");
@@ -75,18 +113,34 @@ bool syncTimeFromWiFi() {
     }
 
     Serial.println(" connected.");
+
+    // Do not use getLocalTime() as the synchronization test here.  It only
+    // checks whether the system clock looks plausible, so a stale RTC-seeded
+    // system clock can make it return immediately before an SNTP packet has
+    // arrived.  Wait for the ESP32 SNTP adjustment callback instead.
+    ntpTimeAdjusted = false;
+    sntp_set_time_sync_notification_cb(onNtpTimeAdjusted);
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    struct tm timeInfo;
-    if (!getLocalTime(&timeInfo, NtpSyncTimeoutMs)) {
+
+    const unsigned long syncStart = millis();
+    while (!ntpTimeAdjusted && millis() - syncStart < NtpSyncTimeoutMs) {
+        delay(25);
+    }
+
+    if (!ntpTimeAdjusted) {
         Serial.println("NTP time sync failed; using RTC or compile-time fallback.");
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
         return false;
     }
 
+    const time_t systemTime = time(nullptr);
+    const bool rtcUpdated = systemTime > 0 &&
+                            rtcClock.setUtcUnixTime(static_cast<uint32_t>(systemTime));
     const bool systemClockReady = rtcClock.useSystemClock();
-    Serial.printf("System clock synchronized from WiFi: %s\n",
-                  systemClockReady ? rtcClock.getISO8601().c_str() : "no");
+    Serial.printf("NTP synchronized UTC: %s  RTC writeback: %s\n",
+                  systemClockReady ? rtcClock.getISO8601().c_str() : "no",
+                  rtcUpdated ? "yes" : "no");
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     return systemClockReady;
@@ -202,6 +256,7 @@ void optimizeAndSaveCalibration() {
 
     calibration.load(result.W.block<3, 3>(0, 0).cast<double>(),
                      result.W.col(3).cast<double>());
+    resetAttitudeEma();
     const bool saved = sdCardReady && sdCard.saveCalibrationTransform(result.W, result.c);
     Serial.printf("Calibration sectors=%d samples=%d cost=%.6f saved=%s\n",
                   collectedSectors, calib.totalAcceptedSampleCount(), result.cost,
@@ -365,13 +420,20 @@ void setup() {
 
     initDisplay(2);  // Portrait: 240 x 320 on the CYD.
     rtcClock.init(MoonlightI2cSda, MoonlightI2cScl);
-    rtcClock.syncSystemClock();
-    syncTimeFromWiFi();
-    Serial.printf("Current time: %s\n", rtcClock.getISO8601().c_str());
+    // Try real SNTP first.  Only seed the ESP32 system clock from the hardware
+    // RTC when network synchronization actually fails.
+    if (!syncTimeFromWiFi()) {
+        rtcClock.syncSystemClock();
+    }
+    Serial.printf("Current UTC: %s\n", rtcClock.getISO8601().c_str());
+    Serial.printf("Current Eastern: %s ET\n",
+                  rtcClock.getEasternDateTimeString().c_str());
 
     initSensors();
     setupSDCard();
     initRotation(0.0f, -0.6f, 0.3f);
+    currentNeuOrientation = computeNeuOrientation(Eigen::Vector3d::Zero(),
+                                                  Eigen::Vector3d::Zero());
 
     currentMoonPosition = computeMoonEnu(rtcClock.currentTime());
     lastMoonUpdateMs = millis();
@@ -379,8 +441,11 @@ void setup() {
 }
 
 void loop() {
-    updateSensors();
-    currentNeuOrientation = computeNeuOrientation(accPoint, magPointTrans);
+    const bool freshSensorSample = updateSensors();
+    if (freshSensorSample) updateAttitudeEma();
+    if (attitudeEmaInitialized) {
+        currentNeuOrientation = computeNeuOrientation(accPointEma, magPointTransEma);
+    }
 
     const unsigned long nowMs = millis();
     if (lastMoonUpdateMs == 0 || nowMs - lastMoonUpdateMs >= MoonUpdatePeriodMs) {

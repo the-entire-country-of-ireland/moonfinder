@@ -25,22 +25,22 @@ bool RTC::init(uint8_t sda_pin=MoonlightI2cSda, uint8_t scl_pin=MoonlightI2cScl)
   }
   
   Serial.println("PCF8523 RTC found!");
-  
-  // Check if RTC lost power
+  _initialized = true;
+  _fallbackStartMillis = millis();
+
+  // Check if RTC lost power.  The PCF8523 is kept in UTC; Eastern conversion
+  // is performed only when formatting text for the display.
   if (!_rtc.initialized() || _rtc.lostPower()) {
     Serial.println("WARNING: RTC lost power!");
-    Serial.println("Using compile time plus uptime.");
+    Serial.println("Using compile time plus uptime until NTP is available.");
   } else {
-    Serial.println("RTC is running with valid time");
-    Serial.print("Current time: ");
-    Serial.println(getDateTimeString());
     _hasValidRtcTime = true;
+    Serial.println("RTC is running with valid UTC time");
+    Serial.print("RTC UTC: ");
+    Serial.println(getDateTimeString());
   }
   
   Serial.println("=== RTC Ready ===\n");
-  
-  _initialized = true;
-  _fallbackStartMillis = millis();
   return true;
 }
 
@@ -95,6 +95,19 @@ bool RTC::useSystemClock() {
   const time_t systemTime = time(nullptr);
   if (systemTime <= 0) return false;
   _useSystemClock = true;
+  return true;
+}
+
+bool RTC::setUtcUnixTime(uint32_t unix_time) {
+  if (!_initialized || unix_time == 0) return false;
+
+  // The PCF8523 is deliberately maintained in UTC.  Local-time conversion
+  // belongs at the presentation layer so DST rules cannot corrupt astronomy.
+  const DateTime utc(unix_time);
+  _rtc.adjust(utc);
+  _fallbackEpoch = unix_time;
+  _fallbackStartMillis = millis();
+  _hasValidRtcTime = true;
   return true;
 }
 

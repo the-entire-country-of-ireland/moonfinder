@@ -25,6 +25,7 @@ public:
   DateTime currentTime();
   bool syncSystemClock();
   bool useSystemClock();
+  bool setUtcUnixTime(uint32_t unix_time);
   
   // Get formatted date/time string (YYYY-MM-DD HH:MM:SS)
   String getDateTimeString();

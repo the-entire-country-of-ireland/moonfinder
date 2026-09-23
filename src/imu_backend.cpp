@@ -53,8 +53,8 @@ void initSensors() {
 #endif
 }
 
-void updateSensors() {
-    if (!sensorReady || !sensorBackend.update()) return;
+bool updateSensors() {
+    if (!sensorReady || !sensorBackend.update()) return false;
     accPoint = sensorBackend.acceleration();
     magPoint = sensorBackend.magnetometer();
     gyroPoint = sensorBackend.gyroscope();
@@ -65,14 +65,16 @@ void updateSensors() {
         accPointTrans.setZero();
         magPointTrans.setZero();
         gyroPointTrans.setZero();
-        return;
+        return false;
     }
     accPointTrans = accPoint.norm() > 0.0 ? accPoint.normalized() : accPoint;
     magPointTrans = calibration.transform(magPoint);
     gyroPointTrans = gyroPoint;
     if (!magPointTrans.allFinite()) {
         magPointTrans.setZero();
+        return false;
     }
+    return true;
 }
 
 void printSensorsToSerial(bool transformed) {

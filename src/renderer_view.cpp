@@ -13,6 +13,12 @@ constexpr double HistoryMinChange = 0.005;
 constexpr int SceneCenterX = SCREEN_WIDTH / 2;
 constexpr int SceneCenterY = 168 - UiHeaderHeight;
 constexpr float SceneScale = 58.0f;
+// RGB565 muted history colors.  The newest instantaneous sample is drawn in
+// saturated blue/red; older samples are intentionally less prominent.
+constexpr uint16_t AccHistoryColor = 0x6415;  // grey-blue
+constexpr uint16_t MagHistoryColor = 0xD4B5;  // light pink
+constexpr uint16_t AccCurrentColor = TFT_BLUE;
+constexpr uint16_t MagCurrentColor = TFT_RED;
 
 Eigen::Vector3d accHistory[HistoryCapacity];
 Eigen::Vector3d magHistory[HistoryCapacity];
@@ -134,21 +140,30 @@ void drawWireSphereOnSprite(uint16_t color) {
 }
 
 void drawHistoryOnSprite() {
+    if (historyCount == 0) return;
+
+    const uint16_t newest = (historyNext + HistoryCapacity - 1) % HistoryCapacity;
     const uint16_t first = historyCount == HistoryCapacity ? historyNext : 0;
     for (uint16_t i = 0; i < historyCount; ++i) {
         const uint16_t index = (first + i) % HistoryCapacity;
-        drawHistoryPointOnSprite(accHistory[index], TFT_LIGHTBLUE);
-        drawHistoryPointOnSprite(magHistory[index], TFT_PINK);
+        if (index == newest) continue;
+        drawHistoryPointOnSprite(accHistory[index], AccHistoryColor);
+        drawHistoryPointOnSprite(magHistory[index], MagHistoryColor);
     }
+
+    // The current instantaneous reading remains visually distinct even after
+    // a full re-projection caused by changing perspective.
+    drawHistoryPointOnSprite(accHistory[newest], AccCurrentColor);
+    drawHistoryPointOnSprite(magHistory[newest], MagCurrentColor);
 }
 
 void drawLegendOnSprite() {
     sprite.setFont(&fonts::Font0);
     sprite.setTextSize(1);
-    sprite.setTextColor(TFT_LIGHTBLUE, TFT_BLACK);
+    sprite.setTextColor(AccCurrentColor, TFT_BLACK);
     sprite.setCursor(7, 5);
     sprite.print("ACC");
-    sprite.setTextColor(TFT_PINK, TFT_BLACK);
+    sprite.setTextColor(MagCurrentColor, TFT_BLACK);
     sprite.setCursor(42, 5);
     sprite.print("MAG");
     sprite.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
@@ -169,14 +184,23 @@ void renderWholeScene() {
 
 void drawNewestHistoryPairIncrementally() {
     if (!uiEnsureContentSprite() || historyCount == 0) return;
-    const uint16_t index = (historyNext + HistoryCapacity - 1) % HistoryCapacity;
+    const uint16_t newest = (historyNext + HistoryCapacity - 1) % HistoryCapacity;
 
-    // Keep the backing sprite synchronized with the LCD, but update only the
-    // two tiny dirty regions on the physical display.
-    drawHistoryPointOnSprite(accHistory[index], TFT_LIGHTBLUE);
-    drawHistoryPointOnSprite(magHistory[index], TFT_PINK);
-    drawHistoryPointOnScreen(accHistory[index], TFT_LIGHTBLUE);
-    drawHistoryPointOnScreen(magHistory[index], TFT_PINK);
+    // Demote the previously-current sample to a muted history point before
+    // drawing the new saturated point.  Do this in both the backing sprite and
+    // the LCD so the next perspective redraw and the incremental view agree.
+    if (historyCount >= 2) {
+        const uint16_t previous = (historyNext + HistoryCapacity - 2) % HistoryCapacity;
+        drawHistoryPointOnSprite(accHistory[previous], AccHistoryColor);
+        drawHistoryPointOnSprite(magHistory[previous], MagHistoryColor);
+        drawHistoryPointOnScreen(accHistory[previous], AccHistoryColor);
+        drawHistoryPointOnScreen(magHistory[previous], MagHistoryColor);
+    }
+
+    drawHistoryPointOnSprite(accHistory[newest], AccCurrentColor);
+    drawHistoryPointOnSprite(magHistory[newest], MagCurrentColor);
+    drawHistoryPointOnScreen(accHistory[newest], AccCurrentColor);
+    drawHistoryPointOnScreen(magHistory[newest], MagCurrentColor);
 }
 }  // namespace
 
