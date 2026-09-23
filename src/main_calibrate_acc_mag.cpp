@@ -5,6 +5,8 @@
 #include <string>
 #include <iomanip>
 #include <cmath>
+#include <WiFi.h>
+#include <time.h>
 
 #include "display.h"
 #include "isometric.h"
@@ -19,21 +21,26 @@
 
 using Eigen::Vector3f;
 
-enum class ScreenMode { Renderer3d, Moonfinder, ConfirmCalibration, Calibration };
+enum class ScreenMode { Renderer3d, Moonfinder, Compass2d, ConfirmCalibration, Calibration };
 
 // Screen field of view. Change these values when the optical/display setup changes.
 constexpr double MoonfinderFovWidthDeg = 60.0;
 constexpr double MoonfinderFovHeightDeg = 45.0;
-constexpr double MoonAngularDiameterDeg = 0.52;
+constexpr double MoonAngularDiameterDeg = 2.0;
 // Positive offsets move the telescope boresight relative to the IMU +Z axis.
 double telescopePitchOffsetDeg = 0.0;
 double telescopeYawOffsetDeg = 0.0;
 constexpr double OffsetDragDegreesPerPixel = 0.025;
+constexpr char WifiSsid[] = "Verizon_4VHJ97";
+constexpr char WifiPassword[] = "rid-spare3-wiry";
+constexpr unsigned long WifiConnectTimeoutMs = 15000;
+constexpr unsigned long NtpSyncTimeoutMs = 10000;
 
 SDCard sdCard;
 String foldername;
+bool sdCardReady = false;
 sector_calib::SectorCalibrator<float> calib;
-ScreenMode screenMode = ScreenMode::Renderer3d;
+ScreenMode screenMode = ScreenMode::Compass2d;
 int collectedSectors = 0;
 int lastTouchX = -1;
 int lastTouchY = -1;
@@ -52,11 +59,54 @@ Eigen::Vector3d magHistory[SensorHistoryCapacity];
 uint16_t sensorHistoryCount = 0;
 uint16_t sensorHistoryNext = 0;
 
+void drawCompass2dScreen(bool redrawPlot, bool clearScreen);
+
+bool syncTimeFromWiFi() {
+    if (WifiSsid[0] == '\0') {
+        Serial.println("WiFi time sync skipped; configure WifiSsid and WifiPassword.");
+        return false;
+    }
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WifiSsid, WifiPassword);
+    Serial.print("Connecting to WiFi for time sync");
+    const unsigned long connectionStart = millis();
+    while (WiFi.status() != WL_CONNECTED &&
+           millis() - connectionStart < WifiConnectTimeoutMs) {
+        delay(50);
+        Serial.print(".");
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println(" failed; using RTC or compile-time fallback.");
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        return false;
+    }
+
+    Serial.println(" connected.");
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, NtpSyncTimeoutMs)) {
+        Serial.println("NTP time sync failed; using RTC or compile-time fallback.");
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        return false;
+    }
+
+    const bool systemClockReady = rtcClock.useSystemClock();
+    Serial.printf("System clock synchronized from WiFi: %s\n",
+                  systemClockReady ? rtcClock.getISO8601().c_str() : "no");
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    return systemClockReady;
+}
+
 void setupSDCard() {
     if (!sdCard.init()) {
         Serial.println("SD card unavailable; calibration will not be persisted.");
         return;
     }
+    sdCardReady = true;
     foldername = sdCard.createFolder("readings", "/data/magacc_pitch");
     sdCard.printDirectory("/data/magacc_pitch", 2);
         Eigen::Matrix<float, 3, 4> transform;
@@ -69,7 +119,10 @@ void setupSDCard() {
 }
 
 void startNewSector() {
-    if (!sdCard.isInitialized()) return;
+    if (!sdCardReady) {
+        Serial.println("Cannot start sector: SD card unavailable.");
+        return;
+    }
     String filename = sdCard.createFile("sector", foldername);
     if (filename.isEmpty()) {
         Serial.println("Failed to create sector file!");
@@ -193,6 +246,9 @@ void drawMoonfinderScreen(bool redrawPlot = false, bool clearScreen = false) {
             tft.setTextColor(TFT_WHITE, TFT_BLUE);
             tft.setFont(&fonts::FreeSans9pt7b);
             tft.drawString("3D", 204, 12);
+            tft.fillRoundRect(145, 5, 45, 26, 4, TFT_DARKCYAN);
+            tft.setTextColor(TFT_WHITE, TFT_DARKCYAN);
+            tft.drawString("COMP", 148, 12);
         }
 
         tft.fillRect(plotLeft, plotTop, plotRight - plotLeft + 1,
@@ -219,7 +275,7 @@ void drawMoonfinderScreen(bool redrawPlot = false, bool clearScreen = false) {
     tft.setCursor(8, 80);
     tft.printf("Pitch offset %+5.1f deg      ", telescopePitchOffsetDeg);
     tft.setCursor(8, 298);
-    tft.printf("%s        ", rtcClock.getDateTimeString().c_str());
+    tft.printf("%s ET        ", rtcClock.getEasternDateTimeString().c_str());
 
     if (!currentNeuOrientation.valid || !currentMoonPosition.valid) {
         tft.setTextColor(TFT_YELLOW, TFT_BLACK);
@@ -346,7 +402,7 @@ bool finishCurrentSector() {
     }
     dumpRuntime("sector finalize begin", sampleCount, collectedSectors);
     tft.fillScreen(TFT_ORANGE);
-    bool wrote = calib.writeSectorSamplesToFile(sdCard);
+    bool wrote = sdCardReady && calib.writeSectorSamplesToFile(sdCard);
     bool ended = calib.finishSector();
     if (ended) ++collectedSectors;
     dumpRuntime(wrote && ended ? "sector finalize ok" : "sector finalize failed",
@@ -399,6 +455,14 @@ void handleTouch() {
         if (touchX >= 195 && touchX < 235 && touchY >= 5 && touchY < 31) {
             screenMode = ScreenMode::Renderer3d;
             drawRendererScreen(true, true);
+        } else if (touchX >= 145 && touchX < 190 && touchY >= 5 && touchY < 31) {
+            screenMode = ScreenMode::Compass2d;
+            drawCompass2dScreen(true, true);
+        }
+    } else if (screenMode == ScreenMode::Compass2d) {
+        if (touchX >= 190 && touchX < 240 && touchY >= 5 && touchY < 31) {
+            screenMode = ScreenMode::Moonfinder;
+            drawMoonfinderScreen(true, true);
         }
     } else if (screenMode == ScreenMode::ConfirmCalibration) {
         if (touchY >= 115 && touchY < 175 && touchX < 120) {
@@ -436,24 +500,21 @@ void setup() {
     initDisplay(0);
     rtcClock.init(MoonlightI2cSda, MoonlightI2cScl);
     rtcClock.syncSystemClock();
+    syncTimeFromWiFi();
     Serial.printf("Current time: %s\n", rtcClock.getISO8601().c_str());
     initSensors();
     setupSDCard();
     initRotation(0.0f, -0.6f, 0.3f);
-    drawRendererScreen(true, true);
+    // drawRendererScreen(true, true);
+    drawCompass2dScreen(true, true);
 }
 
 void loop() {
+    
     updateSensors();
     currentNeuOrientation = computeNeuOrientation(accPoint, magPointTrans);
     currentMoonPosition = computeMoonEnu(rtcClock.currentTime());
-    // if (currentNeuOrientation.valid && currentMoonPosition.valid) {
-    //     Serial.printf("NEU x=(%.3f, %.3f, %.3f) Moon ENU=(%.3f, %.3f, %.3f) az=%.1f el=%.1f\n",
-    //                   currentNeuOrientation.x_neu.x(), currentNeuOrientation.x_neu.y(),
-    //                   currentNeuOrientation.x_neu.z(), currentMoonPosition.enu.x(),
-    //                   currentMoonPosition.enu.y(), currentMoonPosition.enu.z(),
-    //                   currentMoonPosition.azimuth_deg, currentMoonPosition.elevation_deg);
-    // }
+
     updateTouch();
     if (screenMode == ScreenMode::Moonfinder && touchActive && lastTouchActive &&
         lastTouchX >= 0 && lastTouchY >= 0) {
@@ -469,9 +530,10 @@ void loop() {
     const float dt = lastSampleUs == 0 ? 0.0f : (nowUs - lastSampleUs) * 1.0e-6f;
     lastSampleUs = nowUs;
 
-    if (screenMode == ScreenMode::Calibration &&
-        calib.isCollectingSectorSamples() &&
-        !calib.isSectorComplete()) {
+    const bool collectingCalibrationSector =
+        screenMode == ScreenMode::Calibration &&
+        calib.isCollectingSectorSamples();
+    if (collectingCalibrationSector && !calib.isSectorComplete()) {
         calib.recordSample(magPoint.cast<float>(), accPoint.cast<float>(),
                    gyroPoint.cast<float>(), dt);
         if (calib.isSectorComplete()) {
@@ -488,14 +550,17 @@ void loop() {
         drawRendererScreen(true);
     }
 
-    if ((screenMode == ScreenMode::Renderer3d || screenMode == ScreenMode::Moonfinder) &&
+    if ((screenMode == ScreenMode::Renderer3d || screenMode == ScreenMode::Moonfinder ||
+         screenMode == ScreenMode::Compass2d) &&
         millis() - lastRendererRefreshMs >= 50) {
         lastRendererRefreshMs = millis();
         if (screenMode == ScreenMode::Renderer3d) drawRendererScreen();
-        else {
+        else if (screenMode == ScreenMode::Moonfinder) {
             const bool refreshPlot = millis() - lastMoonPlotRefreshMs >= 50;
             drawMoonfinderScreen(refreshPlot, false);
             // printMoonVectorsToSerial();
+        } else {
+            drawCompass2dScreen(true, false);
         }
     }
 
@@ -504,4 +569,87 @@ void loop() {
     lastTouchX = touchActive ? touchX : -1;
     lastTouchY = touchActive ? touchY : -1;
     delay(20);
+}
+
+void drawCompass2dScreen(bool redrawPlot = true, bool clearScreen = false) {
+    constexpr double pi = 3.14159265358979323846;
+    const int16_t plotLeft = 12;
+    const int16_t plotTop = 92;
+    const int16_t plotRight = tft.width() - 12;
+    const int16_t plotBottom = 220;
+    const int16_t centerX = (plotLeft + plotRight) / 2;
+    const int16_t centerY = (plotTop + plotBottom) / 2;
+    const double halfWidth = (plotRight - plotLeft) / 2.0;
+    const double halfHeight = (plotBottom - plotTop) / 2.0;
+
+    tft.setTextWrap(false);
+    if (clearScreen) tft.fillScreen(TFT_BLACK);
+    if (redrawPlot) {
+        tft.fillRect(plotLeft, plotTop, plotRight - plotLeft + 1,
+                     plotBottom - plotTop + 1, TFT_BLACK);
+        tft.drawRect(plotLeft, plotTop, plotRight - plotLeft,
+                     plotBottom - plotTop, TFT_DARKGREY);
+        tft.drawLine(centerX, plotTop, centerX, plotBottom, TFT_DARKGREY);
+        tft.drawLine(plotLeft, centerY, plotRight, centerY, TFT_DARKGREY);
+        tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+        tft.setCursor(centerX - 16, plotTop + 3);
+        tft.print("N");
+        tft.setCursor(plotRight - 14, centerY - 7);
+        tft.print("E");
+        tft.setCursor(centerX - 18, plotBottom + 3);
+        tft.print("S");
+        tft.setCursor(plotLeft + 3, centerY - 7);
+        tft.print("W");
+    }
+
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setFont(&fonts::FreeSans12pt7b);
+    tft.setCursor(3, 8);
+    tft.print("COMPASS");
+    tft.fillRoundRect(190, 5, 45, 26, 4, TFT_BLUE);
+    tft.setTextColor(TFT_WHITE, TFT_BLUE);
+    tft.setFont(&fonts::FreeSans9pt7b);
+    tft.drawString("MOON", 195, 12);
+
+    if (!sensorReady || accPointTrans.norm() <= 1e-9 || magPointTrans.norm() <= 1e-9) {
+        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+        tft.setCursor(24, centerY);
+        tft.print("Waiting for sensor...                 ");
+        return;
+    }
+
+    const Eigen::Vector3d a = accPointTrans.normalized();
+    const Eigen::Vector3d y = calibration.transform(magPointTrans);
+    const Eigen::Vector3d horizontal = y - a * a.dot(y);
+    Eigen::Vector3d forward(1.0, 0.0, 0.0);
+    forward -= a * a.dot(forward);
+    if (forward.norm() <= 1e-9) return;
+    forward.normalize();
+    Eigen::Vector3d right = a.cross(forward).normalized();
+    const double north = horizontal.dot(forward);
+    const double east = horizontal.dot(right);
+    const double headingDeg = std::atan2(-east, north) * 180.0 / pi;
+
+    if (redrawPlot) {
+        const double plotScale = std::max(halfWidth, halfHeight) / 1.2;
+        const int16_t magX = static_cast<int16_t>(centerX + (-east) * plotScale);
+        const int16_t magY = static_cast<int16_t>(centerY - north * plotScale);
+        const double magnitude = std::sqrt(east * east + north * north);
+        const int16_t headingX = static_cast<int16_t>(centerX + (-east / std::max(magnitude, 1e-9)) * plotScale);
+        const int16_t headingY = static_cast<int16_t>(centerY - (north / std::max(magnitude, 1e-9)) * plotScale);
+        tft.drawLine(centerX, centerY, headingX, headingY, TFT_YELLOW);
+        tft.fillCircle(magX, magY, 5, TFT_RED);
+        tft.fillCircle(headingX, headingY, 3, TFT_YELLOW);
+    }
+
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setCursor(8, 45);
+    tft.printf("Heading %+6.1f deg       ", headingDeg);
+    tft.setCursor(8, 65);
+    tft.printf("E %+6.3f  N %+6.3f       ", east, north);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(8, plotBottom + 22);
+    tft.print("RED magnetic   ");
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.print("YELLOW heading");
 }

@@ -10,10 +10,11 @@
 //   1) sector finite-rotation/pitch objective:       0.5 w^T G_pitch w
 //   2) unit-norm objective via Q = W^T W:            0.5 sum_k (mbar_k^T Q mbar_k - 1)^2
 //   3) constant accel-mag dot objective:             0.5 sum_k (ahat_k^T W mbar_k - c)^2
-//   4) optional prior/regularization on W.
+//   4) sector perpendicular-field objective:          0.5 w^T G_perp w
+//   5) optional prior/regularization on W.
 //
 // No samples are retained across sectors. The active sector is temporarily staged so that
-// n_s and theta_s,k can be estimated from accelerometer data before forming G_pitch.
+// n_s and theta_s,k can be estimated from accelerometer data before forming G_pitch and G_perp.
 // If n_s/theta_s,k are supplied externally, the same B accumulators can be updated online.
 
 #if defined(ARDUINO)
@@ -63,6 +64,7 @@ public:
 
   struct SolveOptions {
     Scalar pitch_weight = Scalar(1.0);
+    Scalar perp_weight  = Scalar(1.0);
     Scalar norm_weight  = Scalar(1.0);
     Scalar dot_weight   = Scalar(1.0);
     Scalar prior_weight = Scalar(1e-8);  // weak anchor to initializer; set 0 to disable
@@ -96,6 +98,7 @@ public:
 
   void reset() {
     G_pitch_.setZero();
+    G_perp_.setZero();
     G_norm_.setZero();
     h_norm_.setZero();
     G_dot_.setZero();
@@ -218,6 +221,8 @@ public:
 
     Mat3x12 S_B = Mat3x12::Zero();
     Mat12 S_BB = Mat12::Zero();
+    Mat3x12 S_C = Mat3x12::Zero();
+    Mat12 S_CC = Mat12::Zero();
     Scalar last_theta = 0;
     bool have_last = false;
     Scalar theta_min = std::numeric_limits<Scalar>::infinity();
@@ -245,6 +250,10 @@ public:
       Mat3x12 B = U * magnetometerDesignMatrix(s.mag);
       S_B += B;
       S_BB += B.transpose() * B;
+      Mat3 P = Mat3::Identity() - s.acc_unit * s.acc_unit.transpose();
+      Mat3x12 C = U * P * magnetometerDesignMatrix(s.mag);
+      S_C += C;
+      S_CC += C.transpose() * C;
       ++used;
     }
 
@@ -255,6 +264,8 @@ public:
 
     Mat12 Gs = S_BB - (S_B.transpose() * S_B) / Scalar(used);
     G_pitch_ += Scalar(0.5) * (Gs + Gs.transpose());
+    Mat12 Gperp = S_CC - (S_C.transpose() * S_C) / Scalar(used);
+    G_perp_ += Scalar(0.5) * (Gperp + Gperp.transpose());
 
     SectorInfo info;
     info.n = used;
@@ -482,6 +493,7 @@ public:
 private:
   Options opt_;
   Mat12 G_pitch_;
+  Mat12 G_perp_;
   Mat10 G_norm_;
   Vec10 h_norm_;
   Mat13 G_dot_;
@@ -631,6 +643,7 @@ private:
   Scalar cost(const Vec13& x, const SolveOptions& so) const {
     Vec12 w = x.template head<12>();
     Scalar C = Scalar(0.5) * so.pitch_weight * (w.transpose() * G_pitch_ * w)(0);
+    C += Scalar(0.5) * so.perp_weight * (w.transpose() * G_perp_ * w)(0);
 
     Mat34 W = transformFromVector(w);
     Vec10 q = qFromTransform(W);
@@ -654,6 +667,8 @@ private:
     // Exact pitch quadratic: 0.5*w^T G*w.
     H.template block<12,12>(0,0) += so.pitch_weight * G_pitch_;
     g.template head<12>() += so.pitch_weight * (G_pitch_ * w);
+    H.template block<12,12>(0,0) += so.perp_weight * G_perp_;
+    g.template head<12>() += so.perp_weight * (G_perp_ * w);
 
     // Exact dot quadratic: 0.5*x^T G_dot*x.
     H += so.dot_weight * G_dot_;

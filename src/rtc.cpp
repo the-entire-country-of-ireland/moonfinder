@@ -1,12 +1,14 @@
 #include "rtc.h"
 #include "i2c_config.h"
 #include <sys/time.h>
+#include <time.h>
 
 RTC::RTC()
   : _initialized(false),
     _fallbackEpoch(DateTime(F(__DATE__), F(__TIME__)).unixtime()),
     _fallbackStartMillis(0),
-    _hasValidRtcTime(false) {
+    _hasValidRtcTime(false),
+    _useSystemClock(false) {
 }
 
 bool RTC::init(uint8_t sda_pin=MoonlightI2cSda, uint8_t scl_pin=MoonlightI2cScl) {
@@ -74,6 +76,7 @@ DateTime RTC::now() {
 }
 
 DateTime RTC::currentTime() {
+  if (_useSystemClock) return DateTime(static_cast<uint32_t>(time(nullptr)));
   if (_initialized && _hasValidRtcTime) return _rtc.now();
   return DateTime(_fallbackEpoch + (millis() - _fallbackStartMillis) / 1000);
 }
@@ -84,7 +87,15 @@ bool RTC::syncSystemClock() {
   tv.tv_sec = static_cast<time_t>(value.unixtime());
   tv.tv_usec = 0;
   settimeofday(&tv, nullptr);
+  _useSystemClock = true;
   return value.unixtime() != 0;
+}
+
+bool RTC::useSystemClock() {
+  const time_t systemTime = time(nullptr);
+  if (systemTime <= 0) return false;
+  _useSystemClock = true;
+  return true;
 }
 
 String RTC::getDateTimeString() {
@@ -95,6 +106,26 @@ String RTC::getDateTimeString() {
           dt.year(), dt.month(), dt.day(),
           dt.hour(), dt.minute(), dt.second());
   
+  return String(buffer);
+}
+
+String RTC::getEasternDateTimeString() {
+  static bool timezoneConfigured = false;
+  if (!timezoneConfigured) {
+    setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0/2", 1);
+    tzset();
+    timezoneConfigured = true;
+  }
+
+  const time_t timestamp = static_cast<time_t>(currentTime().unixtime());
+  struct tm easternTime;
+  localtime_r(&timestamp, &easternTime);
+
+  char buffer[20];
+  snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
+           easternTime.tm_year + 1900, easternTime.tm_mon + 1,
+           easternTime.tm_mday, easternTime.tm_hour, easternTime.tm_min,
+           easternTime.tm_sec);
   return String(buffer);
 }
 

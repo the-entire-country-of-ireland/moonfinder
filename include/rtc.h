@@ -24,9 +24,13 @@ public:
   DateTime now();
   DateTime currentTime();
   bool syncSystemClock();
+  bool useSystemClock();
   
   // Get formatted date/time string (YYYY-MM-DD HH:MM:SS)
   String getDateTimeString();
+
+  // Get formatted US Eastern time string (YYYY-MM-DD HH:MM:SS)
+  String getEasternDateTimeString();
   
   // Get ISO 8601 format (YYYY-MM-DDTHH:MM:SS)
   String getISO8601();
@@ -41,6 +45,7 @@ private:
   uint32_t _fallbackEpoch;
   uint32_t _fallbackStartMillis;
   bool _hasValidRtcTime;
+  bool _useSystemClock;
 };
 
 #endif
