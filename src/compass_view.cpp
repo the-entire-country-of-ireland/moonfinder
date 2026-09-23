@@ -7,6 +7,11 @@
 
 namespace {
 constexpr double Pi = 3.14159265358979323846;
+constexpr double HeadingRedrawThresholdDeg = 0.35;
+
+bool haveLastCompassFrame = false;
+bool lastCompassValid = false;
+double lastCompassHeadingDeg = 0.0;
 
 void pointOnCompass(int16_t cx, int16_t cy, double radius, double angleDeg,
                     int16_t& x, int16_t& y) {
@@ -15,14 +20,14 @@ void pointOnCompass(int16_t cx, int16_t cy, double radius, double angleDeg,
     y = static_cast<int16_t>(std::lround(cy - radius * std::cos(angle)));
 }
 
-void drawCompassRose(double headingDeg) {
-    const int16_t cx = tft.width() / 2;
-    const int16_t cy = 174;
+void drawCompassRose(LGFX_Sprite& canvas, double headingDeg) {
+    const int16_t cx = canvas.width() / 2;
+    // Screen-space center was y=174.  Sprite y=0 begins at UiHeaderHeight.
+    const int16_t cy = 174 - UiHeaderHeight;
     const int16_t radius = 91;
 
-    tft.fillRect(0, UiHeaderHeight, tft.width(), UiFooterTop - UiHeaderHeight, TFT_BLACK);
-    tft.drawCircle(cx, cy, radius, TFT_LIGHTGREY);
-    tft.drawCircle(cx, cy, radius - 2, TFT_DARKGREY);
+    canvas.drawCircle(cx, cy, radius, TFT_LIGHTGREY);
+    canvas.drawCircle(cx, cy, radius - 2, TFT_DARKGREY);
 
     for (int bearing = 0; bearing < 360; bearing += 5) {
         const double relative = uiWrap180(static_cast<double>(bearing) - headingDeg);
@@ -32,7 +37,7 @@ void drawCompassRose(double headingDeg) {
         int16_t x1, y1, x2, y2;
         pointOnCompass(cx, cy, radius - 4, relative, x1, y1);
         pointOnCompass(cx, cy, radius - 4 - tick, relative, x2, y2);
-        tft.drawLine(x1, y1, x2, y2, major30 ? TFT_WHITE : TFT_DARKGREY);
+        canvas.drawLine(x1, y1, x2, y2, major30 ? TFT_WHITE : TFT_DARKGREY);
     }
 
     struct Cardinal { int bearing; const char* label; uint16_t color; };
@@ -40,26 +45,26 @@ void drawCompassRose(double headingDeg) {
         {0, "N", TFT_RED}, {90, "E", TFT_WHITE},
         {180, "S", TFT_WHITE}, {270, "W", TFT_WHITE}
     };
-    tft.setFont(&fonts::FreeSans12pt7b);
-    tft.setTextSize(1);
-    tft.setTextDatum(textdatum_t::middle_center);
+    canvas.setFont(&fonts::FreeSans12pt7b);
+    canvas.setTextSize(1);
+    canvas.setTextDatum(textdatum_t::middle_center);
     for (const auto& cardinal : cardinals) {
         int16_t x, y;
         pointOnCompass(cx, cy, radius - 25,
                        uiWrap180(cardinal.bearing - headingDeg), x, y);
-        tft.setTextColor(cardinal.color, TFT_BLACK);
-        tft.drawString(cardinal.label, x, y);
+        canvas.setTextColor(cardinal.color, TFT_BLACK);
+        canvas.drawString(cardinal.label, x, y);
     }
-    tft.setTextDatum(textdatum_t::top_left);
+    canvas.setTextDatum(textdatum_t::top_left);
 
-    // Magnetic north needle in device-relative screen coordinates.
+    // Magnetic north direction in device-relative screen coordinates.
     int16_t northX, northY, southX, southY;
     pointOnCompass(cx, cy, radius - 34, -headingDeg, northX, northY);
     pointOnCompass(cx, cy, radius - 34, 180.0 - headingDeg, southX, southY);
-    tft.drawLine(cx, cy, southX, southY, TFT_LIGHTGREY);
-    tft.drawLine(cx + 1, cy, southX + 1, southY, TFT_LIGHTGREY);
-    tft.drawLine(cx, cy, northX, northY, TFT_RED);
-    tft.drawLine(cx + 1, cy, northX + 1, northY, TFT_RED);
+    canvas.drawLine(cx, cy, southX, southY, TFT_LIGHTGREY);
+    canvas.drawLine(cx + 1, cy, southX + 1, southY, TFT_LIGHTGREY);
+    canvas.drawLine(cx, cy, northX, northY, TFT_RED);
+    canvas.drawLine(cx + 1, cy, northX + 1, northY, TFT_RED);
 
     const double theta = (-headingDeg) * Pi / 180.0;
     const double leftTheta = theta - 0.16;
@@ -69,43 +74,66 @@ void drawCompassRose(double headingDeg) {
     const int16_t leftY = static_cast<int16_t>(std::lround(cy - baseRadius * std::cos(leftTheta)));
     const int16_t rightX = static_cast<int16_t>(std::lround(cx + baseRadius * std::sin(rightTheta)));
     const int16_t rightY = static_cast<int16_t>(std::lround(cy - baseRadius * std::cos(rightTheta)));
-    tft.fillTriangle(northX, northY, leftX, leftY, rightX, rightY, TFT_RED);
-    tft.fillCircle(cx, cy, 6, TFT_WHITE);
-    tft.fillCircle(cx, cy, 3, TFT_BLACK);
+    canvas.fillTriangle(northX, northY, leftX, leftY, rightX, rightY, TFT_RED);
+    canvas.fillCircle(cx, cy, 6, TFT_WHITE);
+    canvas.fillCircle(cx, cy, 3, TFT_BLACK);
 
-    // Fixed lubber line: the top of the display is the device forward direction.
-    tft.fillTriangle(cx, cy - radius - 1, cx - 6, cy - radius + 11,
-                     cx + 6, cy - radius + 11, TFT_CYAN);
+    // Fixed lubber mark: top edge of the CYD is the physical forward direction.
+    canvas.fillTriangle(cx, cy - radius - 1, cx - 6, cy - radius + 11,
+                        cx + 6, cy - radius + 11, TFT_CYAN);
+}
+
+void renderCompassContent(double heading, bool valid) {
+    if (!uiEnsureContentSprite()) return;
+
+    sprite.fillSprite(TFT_BLACK);
+    if (!valid) {
+        uiDrawCenteredText(sprite, "Waiting for orientation",
+                           145 - UiHeaderHeight, TFT_YELLOW, TFT_BLACK, false);
+        uiPushContentSprite();
+        return;
+    }
+
+    drawCompassRose(sprite, heading);
+
+    char headingText[32];
+    std::snprintf(headingText, sizeof(headingText), "%03.0f deg  %s",
+                  heading, uiCardinal16(heading));
+    uiDrawCenteredText(sprite, String(headingText), 53 - UiHeaderHeight,
+                       TFT_WHITE, TFT_BLACK, true);
+    uiPushContentSprite();
 }
 }  // namespace
 
 double compassHeadingDegrees(const NeuOrientation& orientation) {
     if (!orientation.valid) return NAN;
 
-    // NEU convention: x=N, y=E, z=U.  The device +X axis is treated as
-    // the compass forward direction.  atan2(E, N) gives 0=N, 90=E.
-    Eigen::Vector3d forward = orientation.x_neu;
+    // The top edge of the portrait CYD is +Y in the mounted IMU frame, not +X.
+    // orientation.y_neu is therefore the physical forward axis expressed in
+    // NEU coordinates (x=N, y=E, z=U). atan2(E, N) gives the conventional
+    // compass heading: 0=N, 90=E, 180=S, 270=W.
+    Eigen::Vector3d forward = orientation.y_neu;
     forward.z() = 0.0;
     if (!forward.allFinite() || std::hypot(forward.x(), forward.y()) < 1e-9) return NAN;
     return uiWrap360(std::atan2(forward.y(), forward.x()) * 180.0 / Pi);
 }
 
 void drawCompassView(const NeuOrientation& orientation, RTC& clock, bool clearScreen) {
-    if (clearScreen) tft.fillScreen(TFT_BLACK);
-    uiDrawHeader("COMPASS", clock);
-    uiDrawSwitchViewButton();
-
-    const double heading = compassHeadingDegrees(orientation);
-    if (!std::isfinite(heading)) {
-        tft.fillRect(0, UiHeaderHeight, tft.width(), UiFooterTop - UiHeaderHeight, TFT_BLACK);
-        uiDrawCenteredText("Waiting for orientation", 145, TFT_YELLOW, TFT_BLACK, false);
-        return;
+    if (clearScreen) {
+        uiDrawPageChrome("COMPASS", clock, TFT_BLACK, true);
+        haveLastCompassFrame = false;
     }
 
-    drawCompassRose(heading);
+    const double heading = compassHeadingDegrees(orientation);
+    const bool valid = std::isfinite(heading);
+    const bool changed = !haveLastCompassFrame ||
+                         valid != lastCompassValid ||
+                         (valid && std::abs(uiWrap180(heading - lastCompassHeadingDeg)) >=
+                                       HeadingRedrawThresholdDeg);
+    if (!changed) return;
 
-    char headingText[32];
-    std::snprintf(headingText, sizeof(headingText), "%03.0f deg  %s",
-                  heading, uiCardinal16(heading));
-    uiDrawCenteredText(String(headingText), 53, TFT_WHITE, TFT_BLACK, true);
+    renderCompassContent(heading, valid);
+    haveLastCompassFrame = true;
+    lastCompassValid = valid;
+    if (valid) lastCompassHeadingDeg = heading;
 }

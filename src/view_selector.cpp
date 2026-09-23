@@ -12,8 +12,7 @@ UiRect backRect() { return UiRect{12, 239, 216, 40}; }
 }
 
 void drawViewSelector(RTC& clock) {
-    tft.fillScreen(TFT_NAVY);
-    uiDrawHeader("SWITCH VIEW", clock, TFT_NAVY);
+    uiDrawPageChrome("SWITCH VIEW", clock, TFT_NAVY, false);
     uiDrawCenteredText("Choose a view", 57, TFT_LIGHTGREY, TFT_NAVY, false);
     uiDrawButton(compassRect(), "COMPASS", TFT_DARKCYAN);
     uiDrawButton(moonRect(), "MOON", TFT_DARKCYAN);

@@ -130,7 +130,7 @@ void drawCurrentView(bool clearScreen = false, bool resetRendererHistory = false
                                rtcClock, moonfinderState, clearScreen);
             break;
         case ScreenMode::Renderer3d:
-            drawRendererView(rtcClock, true, resetRendererHistory);
+            drawRendererView(rtcClock, true, resetRendererHistory, clearScreen);
             break;
         case ScreenMode::ViewSelector:
             drawViewSelector(rtcClock);
@@ -266,11 +266,15 @@ void handleTouchStart() {
                 startNewSectorFile();
                 calib.beginSector();
                 calibrationWaitingForSector = false;
+                // Only status/buttons changed; keep the rest of the page intact.
+                drawCurrentView(false);
             } else {
+                // finishCurrentSector() intentionally shows a transient working
+                // page while writing, so restore the calibration page afterward.
                 finishCurrentSector();
                 calibrationWaitingForSector = true;
+                drawCurrentView(true);
             }
-            drawCurrentView(true);
         } else if (action == CalibrationUiAction::OptimizeSave) {
             optimizeAndSaveCalibration();
         }
@@ -295,7 +299,7 @@ void handleTouchDrag() {
                            rtcClock, moonfinderState, false);
     } else if (screenMode == ScreenMode::Renderer3d) {
         rendererDrag(deltaX, deltaY);
-        drawRendererView(rtcClock, true, false);
+        drawRendererView(rtcClock, true, false, false);
     }
 }
 
@@ -314,7 +318,21 @@ void recordCalibrationSample(float dt) {
     }
 }
 
+uint16_t activePageBackground() {
+    switch (screenMode) {
+        case ScreenMode::ViewSelector:
+        case ScreenMode::ConfirmCalibration:
+            return TFT_NAVY;
+        default:
+            return TFT_BLACK;
+    }
+}
+
 void refreshActiveView() {
+    // The title/footer are static.  Updating only the timestamp band prevents
+    // the header from flashing at the 80 ms UI cadence.
+    uiUpdateHeaderClock(rtcClock, activePageBackground(), false);
+
     switch (screenMode) {
         case ScreenMode::Compass2d:
             drawCompassView(currentNeuOrientation, rtcClock, false);
@@ -324,17 +342,15 @@ void refreshActiveView() {
                                rtcClock, moonfinderState, false);
             break;
         case ScreenMode::Renderer3d:
-            drawRendererView(rtcClock, false, false);
+            drawRendererView(rtcClock, false, false, false);
             break;
         case ScreenMode::Calibration:
             drawCalibrationView(rtcClock, calibrationWaitingForSector,
                                 collectedSectors, calib.currentSectorSampleCount(), false);
             break;
         case ScreenMode::ViewSelector:
-            drawViewSelector(rtcClock);
-            break;
         case ScreenMode::ConfirmCalibration:
-            drawCalibrationConfirmView(rtcClock);
+            // Static pages: only the clock band above needs periodic service.
             break;
     }
 }
